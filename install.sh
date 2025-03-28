@@ -160,10 +160,9 @@ clone_the_repo () {
         git checkout main
         # Get updates
         git pull
-        # Set the install version
-        git checkout $REPO_TAG
     fi
-
+    # Set the install version
+    git checkout $REPO_TAG
 }
 
 clone_the_repo
