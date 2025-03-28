@@ -98,7 +98,7 @@ review_dependency () {
 
 review_dependency
 
-set -xeuo pipefail 
+set -xeuo pipefail
 
 # -------------------
 # Common variables
@@ -187,12 +187,12 @@ install_immich_web_server () {
     cd ..
 
     cd open-api/typescript-sdk
-    npm ci 
+    npm ci
     npm run build
     cd ../..
 
     cd web
-    npm ci 
+    npm ci
     npm run build
     cd ..
 
@@ -249,19 +249,31 @@ install_immich_machine_learning () {
         poetry update
     fi
 
+    major=$(echo $REPO_TAG | cut -d'.' -f1)
+    minor=$(echo $REPO_TAG | cut -d'.' -f2)
+
+    # Check minor release version
+    # This only assumes version 1.x though
+    # For completeness, we might want to check the major version as well in case someone is using old 0.x versions
+    if [ $minor -gt 129 ]; then
+        poetry_args='--no-root --extras'
+    else
+        poetry_args='--no-root --with dev --with'
+    fi
+
     # Install CUDA parts only when necessary
     if [ $isCUDA = true ]; then
-        poetry install --no-root --with dev --with cuda
+        poetry install $poetry_args cuda
     elif [ $isCUDA = "openvino" ]; then
-        poetry install --no-root --with dev --with openvino
+        poetry install $poetry_args openvino
     else
-        poetry install --no-root --with dev --with cpu
+        poetry install $poetry_args cpu
     fi
 
     # Work around for bad poetry config
     pip install "numpy<2" -i $PROXY_POETRY
     )
-    
+
     # Copy results
     cd $INSTALL_DIR_src
     cp -a machine-learning/ann machine-learning/start.sh machine-learning/app $INSTALL_DIR_ml/
