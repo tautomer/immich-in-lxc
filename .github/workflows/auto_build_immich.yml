@@ -109,7 +109,7 @@ jobs:
           # create .env
           cat << EOF > .env
           REPO_TAG=$IMMICH_VERSION
-          INSTALL_DIR=/home/runner
+          INSTALL_DIR=$HOME
           UPLOAD_DIR=$UPLOAD_DIR
           isCUDA=openvino
           PROXY_NPM=
@@ -122,10 +122,37 @@ jobs:
 
       - name: Archive app folder
         run: |
-          tar -czf app.tar.gz -C ~/app .
+          tar -czf app_geodata.tar.gz -C $HOME app geodata
 
       - name: Upload app as artifact
         uses: actions/upload-artifact@v4
         with:
           name: immich-app-${{ needs.check-immich-release.outputs.latest_release }}
           path: app.tar.gz
+          
+  Release-immich-build:
+    needs: Build-immich
+    if: needs.check-immich-release.outputs.is_new_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: immich-app-${{ needs.check-immich-release.outputs.latest_release }}
+          path: app-release
+
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ needs.check-immich-release.outputs.latest_release }}
+          name: Immich ${{ needs.check-immich-release.outputs.latest_release }}
+          body: |
+            This release contains the latest build of immich:
+            - Version: **${{ needs.check-immich-release.outputs.latest_release }}**
+            - Built on: **${{ github.run_id }}**
+            - Built for: Ubuntu 24.04 LTS with openvino for ML
+          draft: false
+          prerelease: false
+          artifacts: app-release/app.tar.gz
+          token: ${{ secrets.GITHUB_TOKEN }}
+
