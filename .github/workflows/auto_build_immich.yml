@@ -122,13 +122,13 @@ jobs:
 
       - name: Archive app folder
         run: |
-          tar -czf app_geodata.tar.gz -C $HOME app geodata
+          tar -czf server.tar.gz -C $HOME app geodata
 
       - name: Upload app as artifact
         uses: actions/upload-artifact@v4
         with:
           name: immich-app-${{ needs.check-immich-release.outputs.latest_release }}
-          path: app.tar.gz
+          path: server.tar.gz
           
   Release-immich-build:
     needs: Build-immich
@@ -153,6 +153,6 @@ jobs:
             - Built for: Ubuntu 24.04 LTS with openvino for ML
           draft: false
           prerelease: false
-          artifacts: app-release/app.tar.gz
+          artifacts: app-release/server.tar.gz
           token: ${{ secrets.GITHUB_TOKEN }}
 
