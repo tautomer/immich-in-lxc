@@ -1,0 +1,107 @@
+name: Build Immich on New Release
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Runs daily at midnight
+  workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  check-immich-release:
+    runs-on: ubuntu-latest
+    outputs:
+      latest_release: ${{ steps.check.outputs.latest_release }}
+      is_new_release: ${{ steps.check.outputs.is_new_release }}
+    steps:
+      - name: Restore previous release tag
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: .latest_immich_release
+          key: immich-latest-release
+
+      - name: Get latest Immich release
+        id: check
+        run: |
+          LATEST_TAG=$(curl -s https://api.github.com/repos/immich-app/immich/releases/latest | jq -r '.tag_name')
+          PREV_TAG=$(cat .latest_immich_release 2>/dev/null || echo "")
+          echo "latest_release=$LATEST_TAG" >> $GITHUB_ENV
+          echo "latest_release=$LATEST_TAG" >> $GITHUB_OUTPUT
+          if [ "$LATEST_TAG" != "$PREV_TAG" ]; then
+            echo "is_new_release=true" >> $GITHUB_ENV
+            echo "is_new_release=true" >> $GITHUB_OUTPUT
+            echo "$LATEST_TAG" > .latest_immich_release
+          else
+            echo "is_new_release=false" >> $GITHUB_ENV
+            echo "is_new_release=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Save latest release tag
+        if: steps.check.outputs.is_new_release == 'true'
+        uses: actions/cache@v4
+        with:
+          path: .latest_immich_release
+          key: immich-latest-release
+
+  sync-and-build:
+    needs: check-immich-release
+    if: needs.check-immich-release.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout your fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync with loeeeee/immich-in-lxc
+        run: |
+          git remote add upstream https://github.com/loeeeee/immich-in-lxc.git || true
+          git fetch upstream
+          git checkout main
+          git merge --ff-only upstream/main || echo "Already up-to-date"
+          git push origin main || echo "No changes to push"
+
+      - name: Build immich 
+        env:
+          IMMICH_VERSION: ${{ needs.check-immich-release.outputs.latest_release }}
+        run: |
+          sudo useradd -u 1000 -m immich
+          su immich
+          cd ~
+          # TODO: use actions/setup-node@v4.3.0?
+          # install nvm (Node Version Manager)
+          curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
+          # download and install Node.js (you may need to restart the terminal)
+          nvm install 20
+          # load node
+          export NVM_DIR="$HOME/.nvm"
+          [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+          git clone https://github.com/loeeeee/immich-in-lxc.git
+          cd /home/immich/immich-in-lxc/
+          ./dep-ubuntu.sh
+          ./pre-install.sh
+          # install Python 3.11
+          sudo add-apt-repository -y ppa:deadsnakes/ppa
+          sudo apt update
+          sudo apt install python3.11 python3.11-venv python3.11-dev
+          ln -sf /usr/bin/python3.11 /usr/bin/python3
+          # modify install.env
+          cat << EOF > install.env
+          REPO_TAG=$IMMICH_VERSION
+          INSTALL_DIR=/home/immich
+          UPLOAD_DIR=/mnt/photos/.immich
+          isCUDA=openvino
+          PROXY_NPM=
+          PROXY_POETRY=
+          EOF
+          chmod +x install.sh
+          ./install.sh 
+
+      - name: Archive /app folder
+        run: |
+          tar -czf app.tar.gz -C /app .
+
+      - name: Upload /app as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: immich-app-${{ needs.check-immich-release.outputs.latest_release }}
+          path: app.tar.gz
