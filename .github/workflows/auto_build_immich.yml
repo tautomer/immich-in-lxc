@@ -6,7 +6,7 @@ on:
   workflow_dispatch:  # Allows manual triggering
 
 jobs:
-  check-immich-release:
+  Check-immich-release:
     runs-on: ubuntu-latest
     outputs:
       latest_release: ${{ steps.check.outputs.latest_release }}
@@ -43,8 +43,8 @@ jobs:
           key: immich-latest-release
 
   Build-immich:
-    needs: check-immich-release
-    if: needs.check-immich-release.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch'
+    needs: Check-immich-release
+    if: needs.Check-immich-release.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout my fork
@@ -64,6 +64,10 @@ jobs:
         uses: actions/setup-node@v4.3.0
         with:
           node-version: '20'
+      
+      - name: Create user immich
+        run: |
+          sudo useradd -m immich
           
       - name: Install Jellyfin ffmpeg
         run: |
@@ -99,9 +103,10 @@ jobs:
 
       - name: Pre-build
         env:
-          IMMICH_VERSION: ${{ needs.check-immich-release.outputs.latest_release }}
+          IMMICH_VERSION: ${{ needs.Check-immich-release.outputs.latest_release }}
         run: |
           UPLOAD_DIR=/mnt/photos/.immich
+          export INSTALL_DIR=/home/immich >> $GITHUB_ENV
           sudo mkdir -p $UPLOAD_DIR
           cd ${{ github.workspace }}
           sudo ./dep-ubuntu.sh
@@ -109,7 +114,7 @@ jobs:
           # create .env
           cat << EOF > .env
           REPO_TAG=$IMMICH_VERSION
-          INSTALL_DIR=$HOME
+          INSTALL_DIR=$INSTALL_DIR
           UPLOAD_DIR=$UPLOAD_DIR
           isCUDA=openvino
           PROXY_NPM=
@@ -118,16 +123,18 @@ jobs:
           
       - name: Build immich server
         run: |
+          su immich
           ./install.sh 
 
       - name: Archive app folder
         run: |
-          tar -czf server.tar.gz -C $HOME app geodata
+          chown -R $whoami:$whoami $INSTALL_DIR/{app,geodata}
+          tar -czf server.tar.gz -C $INSTALL_DIR app geodata
 
       - name: Upload app as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: immich-app-${{ needs.check-immich-release.outputs.latest_release }}
+          name: immich-app-${{ needs.Check-immich-release.outputs.latest_release }}
           path: server.tar.gz
           
   Release-immich-build:
