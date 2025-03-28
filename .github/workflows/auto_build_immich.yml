@@ -42,7 +42,7 @@ jobs:
           path: .latest_immich_release
           key: immich-latest-release
 
-  sync-and-build:
+  Build-immich:
     needs: check-immich-release
     if: needs.check-immich-release.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -102,7 +102,7 @@ jobs:
           IMMICH_VERSION: ${{ needs.check-immich-release.outputs.latest_release }}
         run: |
           UPLOAD_DIR=/mnt/photos/.immich
-          mkdir -p $UPLOAD_DIR
+          sudo mkdir -p $UPLOAD_DIR
           cd ${{ github.workspace }}
           sudo ./dep-ubuntu.sh
           sudo ./pre-install.sh
