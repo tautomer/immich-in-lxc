@@ -64,8 +64,8 @@ jobs:
         env:
           IMMICH_VERSION: ${{ needs.check-immich-release.outputs.latest_release }}
         run: |
-          sudo useradd -u 1000 -m immich
-          su immich
+          # the default user `runner` already has uid 1000
+          # sudo useradd -u 1000 -m immich
           cd ~
           # TODO: use actions/setup-node@v4.3.0?
           # install nvm (Node Version Manager)
@@ -76,14 +76,14 @@ jobs:
           export NVM_DIR="$HOME/.nvm"
           [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
           git clone https://github.com/loeeeee/immich-in-lxc.git
-          cd /home/immich/immich-in-lxc/
-          ./dep-ubuntu.sh
-          ./pre-install.sh
+          cd immich-in-lxc
+          sudo ./dep-ubuntu.sh
+          sudo ./pre-install.sh
           # install Python 3.11
           sudo add-apt-repository -y ppa:deadsnakes/ppa
           sudo apt update
           sudo apt install python3.11 python3.11-venv python3.11-dev
-          ln -sf /usr/bin/python3.11 /usr/bin/python3
+          sudo ln -sf /usr/bin/python3.11 /usr/bin/python3
           # modify install.env
           cat << EOF > install.env
           REPO_TAG=$IMMICH_VERSION
@@ -96,9 +96,9 @@ jobs:
           chmod +x install.sh
           ./install.sh 
 
-      - name: Archive /app folder
+      - name: Archive app folder
         run: |
-          tar -czf app.tar.gz -C /app .
+          tar -czf app.tar.gz -C ~/app .
 
       - name: Upload /app as artifact
         uses: actions/upload-artifact@v4
