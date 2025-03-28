@@ -107,7 +107,8 @@ jobs:
           IMMICH_VERSION: ${{ needs.Check-immich-release.outputs.latest_release }}
         run: |
           UPLOAD_DIR=/mnt/photos/.immich
-          export INSTALL_DIR=/home/immich >> $GITHUB_ENV
+          export INSTALL_DIR=/home/immich
+          echo "INSTALL_DIR=/home/immich" >> $GITHUB_ENV
           sudo mkdir -p $UPLOAD_DIR
           # create .env
           cat << EOF > ${{ github.workspace }}/.env
