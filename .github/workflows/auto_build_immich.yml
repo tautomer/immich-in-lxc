@@ -132,23 +132,23 @@ jobs:
           
   Release-immich-build:
     needs: Build-immich
-    if: needs.check-immich-release.outputs.is_new_release == 'true'
+    if: needs.Build-immich.outputs.is_new_release == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: immich-app-${{ needs.check-immich-release.outputs.latest_release }}
+          name: immich-app-${{ needs.Build-immich.outputs.latest_release }}
           path: app-release
 
       - name: Create GitHub Release
         uses: ncipollo/release-action@v1
         with:
-          tag: ${{ needs.check-immich-release.outputs.latest_release }}
-          name: Immich ${{ needs.check-immich-release.outputs.latest_release }}
+          tag: ${{ needs.Build-immich.outputs.latest_release }}
+          name: Immich ${{ needs.Build-immich.outputs.latest_release }}
           body: |
             This release contains the latest build of immich:
-            - Version: **${{ needs.check-immich-release.outputs.latest_release }}**
+            - Version: **${{ needs.Build-immich.outputs.latest_release }}**
             - Built on: **${{ github.run_id }}**
             - Built for: Ubuntu 24.04 LTS with openvino for ML
           draft: false
