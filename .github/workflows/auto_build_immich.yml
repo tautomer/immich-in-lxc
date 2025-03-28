@@ -64,6 +64,7 @@ jobs:
         uses: actions/setup-node@v4.3.0
         with:
           node-version: '20'
+          
       - name: Install Jellyfin ffmpeg
         run: |
           sudo apt install curl gnupg software-properties-common
@@ -102,8 +103,8 @@ jobs:
           sudo apt update
           sudo apt install python3.11 python3.11-venv python3.11-dev
           sudo ln -sf /usr/bin/python3.11 /usr/bin/python3
-          # modify install.env
-          cat << EOF > install.env
+          # create .env
+          cat << EOF > .env
           REPO_TAG=$IMMICH_VERSION
           INSTALL_DIR=/home/runner
           UPLOAD_DIR=/mnt/photos/.immich
