@@ -1,4 +1,4 @@
-name: Build Immich on New Release
+name: Build immich on new release
 
 on:
   schedule:
@@ -60,6 +60,7 @@ jobs:
           git merge --ff-only upstream/main || echo "Already up-to-date"
           git push origin main || echo "No changes to push"
           
+      # this is global install
       - name: Set up Node.js
         uses: actions/setup-node@v4.3.0
         with:
@@ -67,7 +68,7 @@ jobs:
       
       - name: Create user immich
         run: |
-          sudo useradd -m immich
+          sudo adduser --shell /bin/bash --disabled-password immich
           
       - name: Install Jellyfin ffmpeg
         run: |
@@ -108,11 +109,8 @@ jobs:
           UPLOAD_DIR=/mnt/photos/.immich
           export INSTALL_DIR=/home/immich >> $GITHUB_ENV
           sudo mkdir -p $UPLOAD_DIR
-          cd ${{ github.workspace }}
-          sudo ./dep-ubuntu.sh
-          sudo ./pre-install.sh
           # create .env
-          cat << EOF > .env
+          cat << EOF > ${{ github.workspace }}/.env
           REPO_TAG=$IMMICH_VERSION
           INSTALL_DIR=$INSTALL_DIR
           UPLOAD_DIR=$UPLOAD_DIR
@@ -120,15 +118,18 @@ jobs:
           PROXY_NPM=
           PROXY_POETRY=
           EOF
+          sudo cp -r ${{ github.workspace }} /home/immich
+          sudo chown -R immich:immich /home/immich/immich-in-lxc
+          cd /home/immich/immich-in-lxc
+          sudo ./dep-ubuntu.sh
+          sudo ./pre-install.sh
           
       - name: Build immich server
         run: |
-          su immich
-          ./install.sh 
+            sudo -iu immich bash -c 'export XDG_CONFIG_HOME=$HOME/.config; export POETRY_CONFIG_DIR=$HOME/.config/pypoetry; cd /home/immich/immich-in-lxc; ./install.sh'
 
       - name: Archive app folder
         run: |
-          chown -R $whoami:$whoami $INSTALL_DIR/{app,geodata}
           tar -czf server.tar.gz -C $INSTALL_DIR app geodata
 
       - name: Upload app as artifact
@@ -158,6 +159,11 @@ jobs:
             - Version: **${{ needs.Build-immich.outputs.latest_release }}**
             - Built on: **${{ github.run_id }}**
             - Built for: Ubuntu 24.04 LTS with openvino for ML
+            - How to install: 
+              - Download `server.tar.gz` in the home folder of your lxc.
+              - Remove `/home/immich/app` and `home/immich/geodata` folder.
+              - Extract the tarball using `tar -xf server.tar.gz`.
+              - Manually update runtime.env or run `./post-install.sh` to install/update systemd services when necessary. Since these files generally do not change with respect to immich updates, they are not included in the tarball.
           draft: false
           prerelease: false
           artifacts: app-release/server.tar.gz
