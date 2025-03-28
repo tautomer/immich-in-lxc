@@ -64,7 +64,28 @@ jobs:
         uses: actions/setup-node@v4.3.0
         with:
           node-version: '20'
-
+      - name: Install Jellyfin ffmpeg
+        run: |
+          sudo apt install curl gnupg software-properties-common
+          sudo add-apt-repository universe
+          sudo mkdir -p /etc/apt/keyrings
+          curl -fsSL https://repo.jellyfin.org/jellyfin_team.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/jellyfin.gpg
+          export VERSION_OS="$( awk -F'=' '/^ID=/{ print $NF }' /etc/os-release )" >> $GITHUB_ENV
+          export VERSION_CODENAME="$( awk -F'=' '/^VERSION_CODENAME=/{ print $NF }' /etc/os-release )" >> $GITHUB_ENV
+          export DPKG_ARCHITECTURE="$( dpkg --print-architecture )" >> $GITHUB_ENV
+          cat <<-EOF | sudo tee /etc/apt/sources.list.d/jellyfin.sources
+          Types: deb
+          URIs: https://repo.jellyfin.org/${VERSION_OS}
+          Suites: ${VERSION_CODENAME}
+          Components: main
+          Architectures: ${DPKG_ARCHITECTURE}
+          Signed-By: /etc/apt/keyrings/jellyfin.gpg
+          EOF
+          sudo apt update
+          sudo apt install jellyfin-ffmpeg7
+          sudo ln -s /usr/lib/jellyfin-ffmpeg/ffmpeg  /usr/bin/ffmpeg
+          sudo ln -s /usr/lib/jellyfin-ffmpeg/ffprobe  /usr/bin/ffprobe
+          
       - name: Build immich 
         env:
           IMMICH_VERSION: ${{ needs.check-immich-release.outputs.latest_release }}
@@ -84,20 +105,19 @@ jobs:
           # modify install.env
           cat << EOF > install.env
           REPO_TAG=$IMMICH_VERSION
-          INSTALL_DIR=/home/immich
+          INSTALL_DIR=/home/runner
           UPLOAD_DIR=/mnt/photos/.immich
           isCUDA=openvino
           PROXY_NPM=
           PROXY_POETRY=
           EOF
-          chmod +x install.sh
           ./install.sh 
 
       - name: Archive app folder
         run: |
           tar -czf app.tar.gz -C ~/app .
 
-      - name: Upload /app as artifact
+      - name: Upload app as artifact
         uses: actions/upload-artifact@v4
         with:
           name: immich-app-${{ needs.check-immich-release.outputs.latest_release }}
