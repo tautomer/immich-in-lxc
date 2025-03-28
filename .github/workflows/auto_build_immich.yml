@@ -59,6 +59,11 @@ jobs:
           git checkout main
           git merge --ff-only upstream/main || echo "Already up-to-date"
           git push origin main || echo "No changes to push"
+          
+      - name: Set up Node.js
+        uses: actions/setup-node@v4.3.0
+        with:
+          node-version: '20'
 
       - name: Build immich 
         env:
@@ -67,14 +72,6 @@ jobs:
           # the default user `runner` already has uid 1000
           # sudo useradd -u 1000 -m immich
           cd ~
-          # TODO: use actions/setup-node@v4.3.0?
-          # install nvm (Node Version Manager)
-          curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
-          # download and install Node.js (you may need to restart the terminal)
-          nvm install 20
-          # load node
-          export NVM_DIR="$HOME/.nvm"
-          [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
           git clone https://github.com/loeeeee/immich-in-lxc.git
           cd immich-in-lxc
           sudo ./dep-ubuntu.sh
