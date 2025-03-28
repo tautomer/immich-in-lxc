@@ -47,12 +47,12 @@ jobs:
     if: needs.check-immich-release.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout your fork
+      - name: Checkout my fork
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Sync with loeeeee/immich-in-lxc
+      - name: Sync with upstream loeeeee/immich-in-lxc
         run: |
           git remote add upstream https://github.com/loeeeee/immich-in-lxc.git || true
           git fetch upstream
@@ -71,9 +71,9 @@ jobs:
           sudo add-apt-repository universe
           sudo mkdir -p /etc/apt/keyrings
           curl -fsSL https://repo.jellyfin.org/jellyfin_team.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/jellyfin.gpg
-          export VERSION_OS="$( awk -F'=' '/^ID=/{ print $NF }' /etc/os-release )" >> $GITHUB_ENV
-          export VERSION_CODENAME="$( awk -F'=' '/^VERSION_CODENAME=/{ print $NF }' /etc/os-release )" >> $GITHUB_ENV
-          export DPKG_ARCHITECTURE="$( dpkg --print-architecture )" >> $GITHUB_ENV
+          export VERSION_OS="$( awk -F'=' '/^ID=/{ print $NF }' /etc/os-release )"
+          export VERSION_CODENAME="$( awk -F'=' '/^VERSION_CODENAME=/{ print $NF }' /etc/os-release )"
+          export DPKG_ARCHITECTURE="$( dpkg --print-architecture )"
           cat <<-EOF | sudo tee /etc/apt/sources.list.d/jellyfin.sources
           Types: deb
           URIs: https://repo.jellyfin.org/${VERSION_OS}
@@ -86,32 +86,38 @@ jobs:
           sudo apt install jellyfin-ffmpeg7
           sudo ln -s /usr/lib/jellyfin-ffmpeg/ffmpeg  /usr/bin/ffmpeg
           sudo ln -s /usr/lib/jellyfin-ffmpeg/ffprobe  /usr/bin/ffprobe
-          
-      - name: Build immich 
+
+      - name: Install Python 3.11
+        run: |
+          # install Python 3.11
+          # before onnxruntime-openvino is bumped, we can only use Python 3.11
+          sudo add-apt-repository -y ppa:deadsnakes/ppa
+          sudo apt update
+          sudo apt install -y python3.11 python3.11-venv python3.11-dev
+          # overwrite the default Python version
+          sudo ln -sf /usr/bin/python3.11 /usr/bin/python3
+
+      - name: Pre-build
         env:
           IMMICH_VERSION: ${{ needs.check-immich-release.outputs.latest_release }}
         run: |
-          # the default user `runner` already has uid 1000
-          # sudo useradd -u 1000 -m immich
-          cd ~
-          git clone https://github.com/loeeeee/immich-in-lxc.git
-          cd immich-in-lxc
+          UPLOAD_DIR=/mnt/photos/.immich
+          mkdir -p $UPLOAD_DIR
+          cd ${{ github.workspace }}
           sudo ./dep-ubuntu.sh
           sudo ./pre-install.sh
-          # install Python 3.11
-          sudo add-apt-repository -y ppa:deadsnakes/ppa
-          sudo apt update
-          sudo apt install python3.11 python3.11-venv python3.11-dev
-          sudo ln -sf /usr/bin/python3.11 /usr/bin/python3
           # create .env
           cat << EOF > .env
           REPO_TAG=$IMMICH_VERSION
           INSTALL_DIR=/home/runner
-          UPLOAD_DIR=/mnt/photos/.immich
+          UPLOAD_DIR=$UPLOAD_DIR
           isCUDA=openvino
           PROXY_NPM=
           PROXY_POETRY=
           EOF
+          
+      - name: Build immich server
+        run: |
           ./install.sh 
 
       - name: Archive app folder
