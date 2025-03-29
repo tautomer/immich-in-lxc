@@ -131,6 +131,7 @@ jobs:
             sudo -iu immich bash -c 'ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python'
             sudo -iu immich bash -c 'ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3'
             sudo -iu immich bash -c 'ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3.11'
+            echo "timestamp=$(date)" >> $GITHUB_ENV
       - name: Archive app folder
         run: |
           tar -czf server.tar.gz -C $INSTALL_DIR app geodata
@@ -140,35 +141,38 @@ jobs:
         with:
           name: immich-app-${{ needs.Check-immich-release.outputs.latest_release }}
           path: server.tar.gz
-          
+
   Release-immich-build:
-    needs: Build-immich
-    if: needs.Build-immich.outputs.is_new_release == 'true'
+    needs: [Build-immich, Check-immich-release]
+    if: needs.Check-immich-release.outputs.is_new_release == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: immich-app-${{ needs.Build-immich.outputs.latest_release }}
+          name: immich-app-${{ needs.Check-immich-release.outputs.latest_release }}
           path: app-release
 
       - name: Create GitHub Release
         uses: ncipollo/release-action@v1
         with:
-          tag: ${{ needs.Build-immich.outputs.latest_release }}
-          name: Immich ${{ needs.Build-immich.outputs.latest_release }}
+          tag: ${{ needs.Check-immich-release.outputs.latest_release }}
+          name: immich server ${{ needs.Check-immich-release.outputs.latest_release }} with openvino for Ubuntu 24.04
           body: |
-            This release contains the latest build of immich:
-            - Version: **${{ needs.Build-immich.outputs.latest_release }}**
-            - Built on: **${{ github.run_id }}**
+            This release contains the latest build of immich server:
+            - Version: **${{ needs.Check-immich-release.outputs.latest_release }}**
+            - Built on: $timestamp
             - Built for: Ubuntu 24.04 LTS with openvino for ML
-            - How to install: 
-              - Download `server.tar.gz` in the home folder of your lxc.
-              - Remove `/home/immich/app` and `home/immich/geodata` folder.
-              - Extract the tarball using `tar -xf server.tar.gz`.
-              - Manually update runtime.env or run `./post-install.sh` to install/update systemd services when necessary. Since these files generally do not change with respect to immich updates, they are not included in the tarball.
+
+            **How to install**: 
+            - Download `server.tar.gz` into the home folder of your LXC.
+            - Remove `/home/immich/app` and `/home/immich/geodata` folders.
+            - Extract the tarball using `tar -xf server.tar.gz`.
+            - If necessary, manually update runtime.env or run `./post-install.sh` to install/update systemd services. Since these files generally do not change with respect to immich updates, they are not included in the tarball.
+
+            **Release details**:  
+            This release was created automatically by GitHub Actions. You can track the build process here: [GitHub Actions Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
           draft: false
           prerelease: false
           artifacts: app-release/server.tar.gz
           token: ${{ secrets.GITHUB_TOKEN }}
-
