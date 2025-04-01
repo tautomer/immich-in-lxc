@@ -109,6 +109,8 @@ INSTALL_DIR_app=$INSTALL_DIR/app
 INSTALL_DIR_ml=$INSTALL_DIR_app/machine-learning
 INSTALL_DIR_geo=$INSTALL_DIR/geodata
 REPO_URL="https://github.com/immich-app/immich"
+MAJOR_VERSION=$(echo $REPO_TAG | cut -d'.' -f1)
+MINOR_VERSION=$(echo $REPO_TAG | cut -d'.' -f2)
 
 # -------------------
 # Clean previous build
@@ -249,13 +251,10 @@ install_immich_machine_learning () {
         poetry update
     fi
 
-    major=$(echo $REPO_TAG | cut -d'.' -f1)
-    minor=$(echo $REPO_TAG | cut -d'.' -f2)
-
     # Check minor release version
     # This only assumes version 1.x though
     # For completeness, we might want to check the major version as well in case someone is using old 0.x versions
-    if [ $minor -gt 129 ]; then
+    if [ $MINOR_VERSION -gt 129 ]; then
         poetry_args='--no-root --extras'
     else
         poetry_args='--no-root --with dev --with'
@@ -276,7 +275,11 @@ install_immich_machine_learning () {
 
     # Copy results
     cd $INSTALL_DIR_src
-    cp -a machine-learning/ann machine-learning/start.sh machine-learning/app $INSTALL_DIR_ml/
+    if [ $MINOR_VERSION -gt 130 ]; then
+        cp -a machine-learning/ann machine-learning/immich_ml $INSTALL_DIR_ml/
+    else
+        cp -a machine-learning/ann machine-learning/start.sh machine-learning/app $INSTALL_DIR_ml/
+    fi
 }
 
 install_immich_machine_learning
@@ -292,7 +295,11 @@ replace_usr_src () {
     grep -Rl /usr/src | xargs -n1 sed -i -e "s@/usr/src@$INSTALL_DIR@g"
     ln -sf $INSTALL_DIR_app/resources $INSTALL_DIR/
     mkdir -p $INSTALL_DIR/cache
-    sed -i -e "s@\"/cache\"@\"$INSTALL_DIR/cache\"@g" $INSTALL_DIR_ml/app/config.py
+    if [ $MINOR_VERSION -gt 130 ]; then
+        sed -i -e "s@\"/cache\"@\"$INSTALL_DIR/cache\"@g" $INSTALL_DIR_ml/immich_ml/config.py
+    else
+        sed -i -e "s@\"/cache\"@\"$INSTALL_DIR/cache\"@g" $INSTALL_DIR_ml/app/config.py
+    fi
     grep -RlE "\"/build\"|'/build'" | xargs -n1 sed -i -e "s@\"/build\"@\"$INSTALL_DIR_app\"@g" -e "s@'/build'@'$INSTALL_DIR_app'@g"
 }
 
