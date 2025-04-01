@@ -44,6 +44,8 @@ jobs:
 
   Build-immich:
     needs: Check-immich-release
+    outputs:
+      timestamp: ${{ steps.build.outputs.timestamp }}
     if: needs.Check-immich-release.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
@@ -126,12 +128,13 @@ jobs:
           sudo ./pre-install.sh
           
       - name: Build immich server
+        id: build
         run: |
             sudo -iu immich bash -c 'export XDG_CONFIG_HOME=$HOME/.config; export POETRY_CONFIG_DIR=$HOME/.config/pypoetry; export NVM_DIR=$HOME/.nvm; cd /home/immich/immich-in-lxc; ./install.sh'
             sudo -iu immich bash -c 'ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python'
             sudo -iu immich bash -c 'ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3'
             sudo -iu immich bash -c 'ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3.11'
-            echo "timestamp=$(date)" >> $GITHUB_ENV
+            echo "timestamp=$(date)" >> $GITHUB_OUTPUT
       - name: Archive app folder
         run: |
           tar -czf server.tar.gz -C $INSTALL_DIR app geodata
@@ -161,10 +164,11 @@ jobs:
           body: |
             This release contains the latest build of immich server:
             - Version: **${{ needs.Check-immich-release.outputs.latest_release }}**
-            - Built on: $timestamp
+            - Built on: **${{ needs.Build-immich.outputs.timestamp }}**
             - Built for: Ubuntu 24.04 LTS with openvino for ML
 
             **How to install**: 
+            - Follow everything except `pre-install.sh` in README right before running `./install.sh`. 
             - Download `server.tar.gz` into the home folder of your LXC.
             - Remove `/home/immich/app` and `/home/immich/geodata` folders.
             - Extract the tarball using `tar -xf server.tar.gz`.
