@@ -26,6 +26,8 @@ jobs:
           PREV_TAG=$(cat .latest_immich_release 2>/dev/null || echo "")
           echo "latest_release=$LATEST_TAG" >> $GITHUB_ENV
           echo "latest_release=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "Latest tag" $LATEST_TAG
+          echo "Previous tag" $PREV_TAG
           if [ "$LATEST_TAG" != "$PREV_TAG" ]; then
             echo "is_new_release=true" >> $GITHUB_ENV
             echo "is_new_release=true" >> $GITHUB_OUTPUT
@@ -168,11 +170,19 @@ jobs:
             - Built for: Ubuntu 24.04 LTS with openvino for ML
 
             **How to install**: 
-            - Follow everything except `pre-install.sh` in README right before running `./install.sh`. 
+            - Follow everything before `pre-install.sh` in README.
+            - Install Python 3.11 as `onnxruntime-openvino=1.18.0` was not built for Python 3.12.
+              ```shell
+              add-apt-repository ppa:deadsnakes/ppa
+              apt update
+              # venv and header files are needed as well
+              apt install python3.11 python3.11-venv python3.11-dev
+              ```
             - Download `server.tar.gz` into the home folder of your LXC.
             - Remove `/home/immich/app` and `/home/immich/geodata` folders.
             - Extract the tarball using `tar -xf server.tar.gz`.
             - If necessary, manually update runtime.env or run `./post-install.sh` to install/update systemd services. Since these files generally do not change with respect to immich updates, they are not included in the tarball.
+            - Restart `immich-ml` and `immich-web` services.
 
             **Release details**:  
             This release was created automatically by GitHub Actions. You can track the build process here: [GitHub Actions Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
