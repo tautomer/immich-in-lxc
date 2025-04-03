@@ -2,8 +2,8 @@ name: Build immich on new release
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # Runs daily at midnight
-  workflow_dispatch:  # Allows manual triggering
+    - cron: '0 0 * * *'  # Runs daily at midnight UTC (supposedly)
+  workflow_dispatch:
 
 jobs:
   Check-immich-release:
@@ -17,7 +17,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .latest_immich_release
-          key: immich-latest-release
+          key: immich-latest-release-
 
       - name: Get latest Immich release
         id: check
@@ -42,7 +42,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .latest_immich_release
-          key: immich-latest-release
+          key: immich-latest-release-${{ steps.check.outputs.latest_release }}
 
   Build-immich:
     needs: Check-immich-release
@@ -64,7 +64,7 @@ jobs:
           git merge --ff-only upstream/main || echo "Already up-to-date"
           git push origin main || echo "No changes to push"
           
-      # this is global install
+      # this is global install which works for all users
       - name: Set up Node.js
         uses: actions/setup-node@v4.3.0
         with:
