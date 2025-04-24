@@ -170,7 +170,7 @@ jobs:
             - Built for: Ubuntu 24.04 LTS with openvino for ML
 
             **How to install**: 
-            - Follow everything before `pre-install.sh` in README.
+            - Follow the setup steps in the README up to (but not including) `pre-install.sh`.
             - Install Python 3.11 as `onnxruntime-openvino=1.18.0` was not built for Python 3.12.
               ```shell
               add-apt-repository ppa:deadsnakes/ppa
