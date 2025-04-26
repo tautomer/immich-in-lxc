@@ -10,45 +10,51 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       latest_release: ${{ steps.check.outputs.latest_release }}
-      is_new_release: ${{ steps.check.outputs.is_new_release }}
+      is_new_release: ${{ steps.compare.outputs.is_new_release }}
     steps:
-      - name: Restore previous release tag
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: .latest_immich_release
-          key: immich-latest-release-
-
       - name: Get latest Immich release
         id: check
         run: |
+          # Get the latest release tag
           LATEST_TAG=$(curl -s https://api.github.com/repos/immich-app/immich/releases/latest | jq -r '.tag_name')
-          PREV_TAG=$(cat .latest_immich_release 2>/dev/null || echo "")
           echo "latest_release=$LATEST_TAG" >> $GITHUB_ENV
           echo "latest_release=$LATEST_TAG" >> $GITHUB_OUTPUT
-          echo "Latest tag" $LATEST_TAG
-          echo "Previous tag" $PREV_TAG
+
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: .latest_immich_release
+          key: immich-latest-release-${{ steps.check.outputs.latest_release }}  
+          restore-keys: |
+            immich-latest-release-
+
+      - name: Compare latest release with cached one
+        id: compare
+        run: |
+          # Get the latest release tag from the first step
+          LATEST_TAG=${{ steps.check.outputs.latest_release }}
+
+          # Read the previous release tag from the cache, fallback to empty if not found
+          PREV_TAG=$(cat .latest_immich_release 2>/dev/null || echo "")
+
+          echo "Latest tag: $LATEST_TAG"
+          echo "Previous tag: $PREV_TAG"
+
           if [ "$LATEST_TAG" != "$PREV_TAG" ]; then
             echo "is_new_release=true" >> $GITHUB_ENV
             echo "is_new_release=true" >> $GITHUB_OUTPUT
-            echo "$LATEST_TAG" > .latest_immich_release
+            # echo "$LATEST_TAG" > .latest_immich_release  # Save the new tag if it's a new release
           else
             echo "is_new_release=false" >> $GITHUB_ENV
             echo "is_new_release=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Save latest release tag
-        if: steps.check.outputs.is_new_release == 'true'
-        uses: actions/cache@v4
-        with:
-          path: .latest_immich_release
-          key: immich-latest-release-${{ steps.check.outputs.latest_release }}
 
   Build-immich:
     needs: Check-immich-release
     outputs:
       timestamp: ${{ steps.build.outputs.timestamp }}
-    if: needs.Check-immich-release.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.Check-immich-release.outputs.is_new_release == 'true' # || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout my fork
