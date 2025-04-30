@@ -43,7 +43,7 @@ jobs:
           if [ "$LATEST_TAG" != "$PREV_TAG" ]; then
             echo "is_new_release=true" >> $GITHUB_ENV
             echo "is_new_release=true" >> $GITHUB_OUTPUT
-            # echo "$LATEST_TAG" > .latest_immich_release  # Save the new tag if it's a new release
+            echo "$LATEST_TAG" > .latest_immich_release  # Save the new tag if it's a new release
           else
             echo "is_new_release=false" >> $GITHUB_ENV
             echo "is_new_release=false" >> $GITHUB_OUTPUT
