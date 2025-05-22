@@ -127,6 +127,7 @@ jobs:
           UPLOAD_DIR=$UPLOAD_DIR
           isCUDA=openvino
           PROXY_NPM=
+          PROXY_NPM_DIST=
           PROXY_POETRY=
           EOF
           sudo cp -r ${{ github.workspace }} /home/immich
