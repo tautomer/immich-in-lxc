@@ -4,14 +4,8 @@ set -xeuo pipefail # Make my life easier
 
 # Install Dependency for Ubuntu 24.04 LTS
 
-./dep-common.sh
-
-# libjpeg62-turbo-dev
-## Fix my previous mistake
-# apt purge -y \
-#         libjpeg62-dev
-# apt install --no-install-recommends -y \
-#         libjpeg-turbo8-dev
+apt install --no-install-recommends -y \
+        libjpeg-turbo8-dev
 
 # Dockerfile 35
 apt install --no-install-recommends -y \

@@ -111,8 +111,20 @@ INSTALL_DIR_app=$INSTALL_DIR/app
 INSTALL_DIR_ml=$INSTALL_DIR_app/machine-learning
 INSTALL_DIR_geo=$INSTALL_DIR/geodata
 REPO_URL="https://github.com/immich-app/immich"
-MAJOR_VERSION=$(echo $REPO_TAG | cut -d'.' -f1)
-MINOR_VERSION=$(echo $REPO_TAG | cut -d'.' -f2)
+MAJOR_VERSION=$(echo $REPO_TAG | cut -d'.' -f1) # No longer used, but might worth keeping it around
+MINOR_VERSION=$(echo $REPO_TAG | cut -d'.' -f2) # No longer used, but might worth keeping it around
+
+# The idea is that when one needs to sets up a proxy for NPM, 
+# they might not have good access to GitHub
+# Thus, build from source would be faster
+# Add --build-from-source in npm ci is the solution if node-pre-gyp stuck at GET http https://github.com.....
+# Lastly, printing out build process looks cool :)
+if [ -n "$PROXY_NPM" ]; then
+  isNPM_BUILD_FROM_SOURCE="true"
+else
+  isNPM_BUILD_FROM_SOURCE="false"
+fi
+
 
 # -------------------
 # Clean previous build
@@ -187,26 +199,31 @@ install_immich_web_server () {
     if [ ! -z "${PROXY_NPM_DIST}" ]; then
         export npm_config_dist_url=$PROXY_NPM_DIST
     fi
+    # Set npm args
+    if $isNPM_BUILD_FROM_SOURCE; then
+        npm_args="--build-from-source --verbose --foreground-script"
+    else
+        npm_args=""
+    fi
 
     # This solves fallback-to-build issue with bcrypt and utimes
-    npm install -g node-gyp node-pre-gyp
+    npm install -g node-gyp @mapbox/node-pre-gyp
     # Solve audit stuck by skipping it, [Additional info](https://overreacted.io/npm-audit-broken-by-design/)
     # npm config set audit false
 
-    # Add --build-from-source in npm ci is the solution if node-pre-gyp stuck at GET http https://github.com.....
     cd server
-    npm ci # --cpu x64 --os linux
+    npm ci $npm_args # --cpu x64 --os linux
     npm run build
     npm prune --omit=dev --omit=optional
     cd ..
 
     cd open-api/typescript-sdk
-    npm ci # --cpu x64 --os linux
+    npm ci $npm_args # --cpu x64 --os linux
     npm run build
     cd ../..
 
     cd web
-    npm ci # --cpu x64 --os linux
+    npm ci $npm_args # --cpu x64 --os linux
     npm run build
     cd ..
 
@@ -251,10 +268,16 @@ install_immich_machine_learning () {
 
     # Use pypi if proxy does not present
     if [ -z "${PROXY_POETRY}" ]; then
-        PROXY_POETRY=https://pypi.org/simple/
+        PROXY_POETRY=https://pypi.org/simple/  
     fi
-    export POETRY_PYPI_MIRROR_URL=$PROXY_POETRY
     pip3 install poetry -i $PROXY_POETRY
+
+    # Set PROXY_POETRY as the primary source to download package from
+    # https://python-poetry.org/docs/repositories/#primary-package-sources
+    if [ ! -z "${PROXY_POETRY}" ]; then
+        # langsam literally means slow
+        poetry source add --priority=primary langsam $PROXY_POETRY
+    fi
 
     # Deal with python 3.12
     python3_version=$(python3 --version 2>&1 | awk -F' ' '{print $2}' | awk -F'.' '{print $2}')
@@ -263,23 +286,27 @@ install_immich_machine_learning () {
         sed -i -e 's/<3.12/<4/g' pyproject.toml
         poetry update
     fi
-
-    # Check minor release version
-    # This only assumes version 1.x though
-    # For completeness, we might want to check the major version as well in case someone is using old 0.x versions
-    if [ $MINOR_VERSION -gt 129 ]; then
-        poetry_args='--no-root --extras'
-    else
-        poetry_args='--no-root --with dev --with'
-    fi
-
+    
     # Install CUDA parts only when necessary
     if [ $isCUDA = true ]; then
-        poetry install $poetry_args cuda
+        poetry install --no-root --extras cuda
     elif [ $isCUDA = "openvino" ]; then
-        poetry install $poetry_args openvino
+        poetry install --no-root --extras openvino
+    elif [ $isCUDA = "rocm"]; then
+        # https://rocm.docs.amd.com/projects/radeon/en/latest/docs/install/native_linux/install-onnx.html
+        poetry add onnxruntime-rocm
+        poetry install --no-root --extras rocm
+        # Verify installation
+        python3 -c "import onnxruntime as ort; print(ort.get_available_providers())"
     else
-        poetry install $poetry_args cpu
+        poetry install --no-root --extras cpu
+    fi
+
+    # Reset the settings
+    if [ ! -z "${PROXY_POETRY}" ]; then
+        # Remove the source
+        # https://python-poetry.org/docs/cli/#source-remove
+        poetry source remove langsam
     fi
 
     # Work around for bad poetry config
@@ -288,11 +315,7 @@ install_immich_machine_learning () {
 
     # Copy results
     cd $INSTALL_DIR_src
-    if [ $MINOR_VERSION -gt 130 ]; then
-        cp -a machine-learning/ann machine-learning/immich_ml $INSTALL_DIR_ml/
-    else
-        cp -a machine-learning/ann machine-learning/start.sh machine-learning/app $INSTALL_DIR_ml/
-    fi
+    cp -a machine-learning/ann machine-learning/immich_ml $INSTALL_DIR_ml/
 }
 
 install_immich_machine_learning
@@ -308,11 +331,9 @@ replace_usr_src () {
     grep -Rl /usr/src | xargs -n1 sed -i -e "s@/usr/src@$INSTALL_DIR@g"
     ln -sf $INSTALL_DIR_app/resources $INSTALL_DIR/
     mkdir -p $INSTALL_DIR/cache
-    if [ $MINOR_VERSION -gt 130 ]; then
-        sed -i -e "s@\"/cache\"@\"$INSTALL_DIR/cache\"@g" $INSTALL_DIR_ml/immich_ml/config.py
-    else
-        sed -i -e "s@\"/cache\"@\"$INSTALL_DIR/cache\"@g" $INSTALL_DIR_ml/app/config.py
-    fi
+
+    sed -i -e "s@\"/cache\"@\"$INSTALL_DIR/cache\"@g" $INSTALL_DIR_ml/immich_ml/config.py
+
     grep -RlE "\"/build\"|'/build'" | xargs -n1 sed -i -e "s@\"/build\"@\"$INSTALL_DIR_app\"@g" -e "s@'/build'@'$INSTALL_DIR_app'@g"
 }
 
@@ -329,8 +350,14 @@ install_sharp_and_cli () {
     if [ ! -z "${PROXY_NPM}" ]; then
         npm config set registry=$PROXY_NPM
     fi
+    # Set npm args
+    if $isNPM_BUILD_FROM_SOURCE; then
+        npm_args="--verbose --foreground-script"
+    else
+        npm_args=""
+    fi
 
-    npm install --build-from-source sharp
+    npm install --build-from-source $npm_args sharp
 
     # Remove sharp dependency so that it use system library
     rm -rf $INSTALL_DIR_app/node_modules/@img/sharp-libvips*
@@ -403,13 +430,6 @@ cd $INSTALL_DIR_app
 exec node $INSTALL_DIR_app/dist/main "\$@"
 EOF
 
-if [ $MINOR_VERSION -gt 130 ]; then
-    pkg_name=immich_ml
-else
-    pkg_name=app
-fi
-
-
     # Machine learning
     cat <<EOF > $INSTALL_DIR_ml/start.sh
 #!/bin/bash
@@ -426,8 +446,8 @@ cd $INSTALL_DIR_ml
 : "\${MACHINE_LEARNING_WORKERS:=1}"
 : "\${MACHINE_LEARNING_WORKER_TIMEOUT:=120}"
 
-exec gunicorn $pkg_name.main:app \
-        -k $pkg_name.config.CustomUvicornWorker \
+exec gunicorn immich_ml.main:app \
+        -k immich_ml.config.CustomUvicornWorker \
         -w "\$MACHINE_LEARNING_WORKERS" \
         -b "\$MACHINE_LEARNING_HOST":"\$MACHINE_LEARNING_PORT" \
         -t "\$MACHINE_LEARNING_WORKER_TIMEOUT" \
@@ -435,9 +455,7 @@ exec gunicorn $pkg_name.main:app \
         --graceful-timeout 0
 EOF
 
-if [ $MINOR_VERSION -gt 130 ]; then
     chmod 775 $INSTALL_DIR_ml/start.sh
-fi
 }
 
 create_custom_start_script
