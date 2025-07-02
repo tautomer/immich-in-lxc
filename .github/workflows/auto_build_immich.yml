@@ -2,7 +2,7 @@ name: Build immich on new release
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # Runs daily at midnight UTC (supposedly)
+    - cron: '0 0 * * *' # Runs daily at midnight UTC (supposedly)
   workflow_dispatch:
 
 jobs:
@@ -20,41 +20,40 @@ jobs:
           echo "latest_release=$LATEST_TAG" >> $GITHUB_ENV
           echo "latest_release=$LATEST_TAG" >> $GITHUB_OUTPUT
 
-      - uses: actions/cache@v4
-        id: cache
-        with:
-          path: .latest_immich_release
-          key: immich-latest-release-${{ steps.check.outputs.latest_release }}  
-          restore-keys: |
-            immich-latest-release-
-
-      - name: Compare latest release with cached one
+      - name: Compare latest release with stored one
         id: compare
+        env:
+          STORED_RELEASE_VAR: ${{ vars.LATEST_IMMICH_RELEASE }} # Access the repository variable
         run: |
           # Get the latest release tag from the first step
           LATEST_TAG=${{ steps.check.outputs.latest_release }}
 
-          # Read the previous release tag from the cache, fallback to empty if not found
-          PREV_TAG=$(cat .latest_immich_release 2>/dev/null || echo "")
+          # Read the previous release tag from the repository variable, fallback to empty if not found
+          PREV_TAG="${{ env.STORED_RELEASE_VAR }}"
 
           echo "Latest tag: $LATEST_TAG"
-          echo "Previous tag: $PREV_TAG"
+          echo "Previous tag (from variable): $PREV_TAG"
 
           if [ "$LATEST_TAG" != "$PREV_TAG" ]; then
             echo "is_new_release=true" >> $GITHUB_ENV
             echo "is_new_release=true" >> $GITHUB_OUTPUT
-            echo "$LATEST_TAG" > .latest_immich_release  # Save the new tag if it's a new release
+            # Update the repository variable
+            echo "::notice file=README.md::New release detected: $LATEST_TAG. Updating repository variable."
+            curl -X PATCH \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository_owner }}/${{ github.repository }}/variables/LATEST_IMMICH_RELEASE \
+            -d '{"value":"'$LATEST_TAG'"}'
           else
             echo "is_new_release=false" >> $GITHUB_ENV
             echo "is_new_release=false" >> $GITHUB_OUTPUT
           fi
 
-
   Build-immich:
     needs: Check-immich-release
     outputs:
       timestamp: ${{ steps.build.outputs.timestamp }}
-    if: needs.Check-immich-release.outputs.is_new_release == 'true' # || github.event_name == 'workflow_dispatch'
+    if: needs.Check-immich-release.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch' # Added workflow_dispatch back for manual runs
     runs-on: ubuntu-latest
     steps:
       - name: Checkout my fork
@@ -75,7 +74,7 @@ jobs:
         uses: actions/setup-node@v4.3.0
         with:
           node-version: '20'
-      
+          
       - name: Create user immich
         run: |
           sudo adduser --shell /bin/bash --disabled-password immich
@@ -176,7 +175,7 @@ jobs:
             - Built on: **${{ needs.Build-immich.outputs.timestamp }}**
             - Built for: Ubuntu 24.04 LTS with openvino for ML
 
-            **How to install**: 
+            **How to install**:  
             - Follow the setup steps in the README up to (but not including) `pre-install.sh`.
             - Install Python 3.11 as `onnxruntime-openvino=1.18.0` was not built for Python 3.12.
               ```shell
