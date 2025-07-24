@@ -3,6 +3,19 @@
 set -xeuo pipefail # Make people's life easier
 
 # -------------------
+# Check current user
+# -------------------
+
+check_user_id () {
+    if [ "$EUID" -eq 0 ]; then
+        echo "Error: This script should NOT be run as root."
+        exit 1
+    fi
+}
+
+check_user_id
+
+# -------------------
 # Create env file if it does not exists
 # -------------------
 SCRIPT_DIR=$PWD
@@ -14,6 +27,7 @@ create_install_env_file () {
         if [ -f $SCRIPT_DIR/install.env ]; then
             cp install.env .env
             echo "New .env file created from the template, exiting"
+            echo "Please review the .env before rerunning the script"
             exit 0
         else
             echo ".env.template not found, please clone the entire repo, exiting"
@@ -63,6 +77,28 @@ review_install_information () {
 review_install_information
 
 # -------------------
+# Check if node are installed
+# -------------------
+
+install_node () {
+    # node.js
+    if ! command -v node &> /dev/null; then
+        echo "ERROR: Node.js is not installed."
+        echo "Installing Node.js for current user"
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+        \. "$HOME/.nvm/nvm.sh"
+        # use $PROXY_NPM_DIST 
+        NVM_NODEJS_ORG_MIRROR=$PROXY_NPM_DIST
+        nvm install --lts
+        echo "Finish installing latest LTS node"
+    fi
+    echo "npm version: {$(npm -v)}"
+    echo "node version: {$(node -v)}"
+}
+
+install_node
+
+# -------------------
 # Check if dependency are met
 # -------------------
 
@@ -70,21 +106,26 @@ review_dependency () {
     # ffmpeg
     if ! command -v ffmpeg &> /dev/null; then
         echo "ERROR: ffmpeg is not installed."
+        echo "Please run pre-install.sh first"
+        exit 1
     fi
 
     # node.js
     if ! command -v node &> /dev/null; then
         echo "ERROR: Node.js is not installed."
+        exit 1
     fi
 
     # python3
     if ! command -v python3 &> /dev/null; then
         echo "ERROR: Python is not installed."
+        exit 1
     fi
 
     # git
     if ! command -v git &> /dev/null; then
         echo "ERROR: Git is not installed."
+        exit 1
     fi
 
     # (Optional) Nvidia Driver
@@ -95,7 +136,7 @@ review_dependency () {
         fi
     fi
 
-    # (Optional) Nvidia CuDNN
+    echo "Dependency check passed!"
 }
 
 review_dependency
@@ -110,6 +151,7 @@ INSTALL_DIR_src=$INSTALL_DIR/source
 INSTALL_DIR_app=$INSTALL_DIR/app
 INSTALL_DIR_ml=$INSTALL_DIR_app/machine-learning
 INSTALL_DIR_geo=$INSTALL_DIR/geodata
+TMP_DIR=/tmp/$(whoami)/immich-in-lxc/
 REPO_URL="https://github.com/immich-app/immich"
 MAJOR_VERSION=$(echo $REPO_TAG | cut -d'.' -f1) # No longer used, but might worth keeping it around
 MINOR_VERSION=$(echo $REPO_TAG | cut -d'.' -f2) # No longer used, but might worth keeping it around
@@ -157,6 +199,9 @@ create_folders () {
 
     # GeoNames
     mkdir -p $INSTALL_DIR_geo
+
+    # Create a temporary folder for the json files
+    mkdir -p $TMP_DIR
 }
 
 create_folders
@@ -210,9 +255,16 @@ install_immich_web_server () {
     npm install -g node-gyp @mapbox/node-pre-gyp
     # Solve audit stuck by skipping it, [Additional info](https://overreacted.io/npm-audit-broken-by-design/)
     # npm config set audit false
+    # Install immich cli
+    npm i -g @immich/cli
 
     cd server
     npm ci $npm_args # --cpu x64 --os linux
+    # From immich-app/server/Dockerfile line 7
+    rm -rf $INSTALL_DIR_app/node_modules/@img/sharp-libvips*
+    rm -rf $INSTALL_DIR_app/node_modules/@img/sharp-linuxmusl-x64
+    # Install non-trivial dependency
+    npm i exiftool-vendored.pl
     npm run build
     npm prune --omit=dev --omit=optional
     cd ..
@@ -237,23 +289,35 @@ install_immich_web_server () {
     cp -a server/resources server/package.json server/package-lock.json $INSTALL_DIR_app/
     cp -a server/start*.sh $INSTALL_DIR_app/
     cp -a LICENSE $INSTALL_DIR_app/
+    cp -a i18n $INSTALL_DIR/
+    cp -a open-api/typescript-sdk $INSTALL_DIR_app/
+    cp -a docker/scripts/get-cpus.sh $INSTALL_DIR_app/
     cd ..
 }
 
 install_immich_web_server
 
 # -------------------
-# Copy build-lock
+# Generate build-lock
 # -------------------
 
-copy_build_lock () {
+generate_build_lock () {
     # So that immich would not complain
     cd $SCRIPT_DIR
-    shopt -s nullglob
-    cp base-images/server/sources/*.json "$INSTALL_DIR_app/"
+
+    cd base-images/server/
+
+    # From base-images/server/Dockerfile line 110
+    jq -s '.' packages/*.json > $TMP_DIR/packages.json
+    jq -s '.' sources/*.json > $TMP_DIR/sources.json
+    jq -n \
+        --slurpfile sources $TMP_DIR/sources.json \
+        --slurpfile packages $TMP_DIR/packages.json \
+        '{sources: $sources[0], packages: $packages[0]}' \
+        > $INSTALL_DIR_app/build-lock.json
 }
 
-copy_build_lock
+generate_build_lock
 
 # -------------------
 # Install Immich-machine-learning
@@ -292,12 +356,13 @@ install_immich_machine_learning () {
         poetry install --no-root --extras cuda
     elif [ $isCUDA = "openvino" ]; then
         poetry install --no-root --extras openvino
-    elif [ $isCUDA = "rocm"]; then
+    elif [ $isCUDA = "rocm" ]; then
         # https://rocm.docs.amd.com/projects/radeon/en/latest/docs/install/native_linux/install-onnx.html
-        poetry add onnxruntime-rocm
-        poetry install --no-root --extras rocm
+        pip3 install onnxruntime-rocm -f https://repo.radeon.com/rocm/manylinux/rocm-rel-6.4.1/
         # Verify installation
         python3 -c "import onnxruntime as ort; print(ort.get_available_providers())"
+        # ROCm needs numpy < 2 [workaround](https://rocm.docs.amd.com/projects/radeon/en/latest/docs/install/native_linux/install-onnx.html)
+        pip install "numpy<2" -i $PROXY_POETRY
     else
         poetry install --no-root --extras cpu
     fi
@@ -309,8 +374,6 @@ install_immich_machine_learning () {
         poetry source remove langsam
     fi
 
-    # Work around for bad poetry config
-    pip install "numpy<2" -i $PROXY_POETRY
     )
 
     # Copy results
@@ -360,10 +423,7 @@ install_sharp_and_cli () {
     npm install --build-from-source $npm_args sharp
 
     # Remove sharp dependency so that it use system library
-    rm -rf $INSTALL_DIR_app/node_modules/@img/sharp-libvips*
-    rm -rf $INSTALL_DIR_app/node_modules/@img/sharp-linuxmusl-x64
 
-    npm i -g @immich/cli
 
     # Unset mirror for npm
     if [ ! -z "${PROXY_NPM}" ]; then
@@ -371,7 +431,7 @@ install_sharp_and_cli () {
     fi
 }
 
-install_sharp_and_cli
+# install_sharp_and_cli
 
 # -------------------
 # Setup upload directory

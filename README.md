@@ -1,10 +1,10 @@
-# Immich with CUDA Support in LXC (w/o Docker)
+# Immich with CUDA/ROCm Support in LXC (w/o Docker)
 
 [![Build immich on new release](https://github.com/tautomer/immich-in-lxc/actions/workflows/auto_build_immich.yml/badge.svg)](https://github.com/tautomer/immich-in-lxc/actions/workflows/auto_build_immich.yml)
 
 A complete guide for installing Immich in LXC, VM, or bare-metal without Docker, but with 
 
-- **CUDA support for machine-learning** (if one choose so), 
+- **CUDA/ROCm support for machine-learning** (if one choose so), 
 - **hardware acceleration for transcoding**,
 - **HEIF, RAW, and JXL support**,
 - Experimental Intel iGPU/dGPU/NPU support for machine-learning (if one choose so), 
@@ -35,15 +35,19 @@ Lastly, by using this repo, one could reliably set up a hardware-accelerated Imm
 
 ## Immich Components
 
+
+<details>
+<summary>Not so important</summary>
+
 - Immich
     - Web Server
     - Machine Learning Server
 - Database
     - Redis
     - Postgresql
-        - PG-vector
+        - VectorChord
 - System
-    - FFmpeg
+    - Jellyfin-ffmpeg
     - Node.js
     - git
 - (Optional) Reverse Proxy
@@ -51,16 +55,27 @@ Lastly, by using this repo, one could reliably set up a hardware-accelerated Imm
 - (Optional) NVIDIA
     - Driver (i.e. CUDA Runtime)
     - CuDNN (Version 9)
+- (Optional) AMD
+    - ROCm driver (6.4.1)
 
 As one could tell, it is a lot of works, and a lot of things to get right. However, Immich is quite resilience and will fall-back to a baseline default when hardware acceleration does not work.
 
 For the simplicity of the guide, all the components are installed in a single LXC container. However, it is always possible to run different components in different LXC containers. As it is always a design choice.
 
+<br>
+</details>
+
 ## Host setup
+
+<details>
+<summary>Not so important</summary>
 
 I am using `Proxmox VE 8` as the LXC host, which is based on `Debian 12`, and I have a NVIDIA GPU, with a proprietary driver (550) installed. Some others are using a N100 mini PC box with Intel Quick Sync. And all of these do not matter.
 
 However, if possible, use an LXC or VM with `Ubuntu 24.04 LTS` as it offers an easier set-up.
+
+<br>
+</details>
 
 ## Prepare the LXC container, or whatever
 
@@ -70,15 +85,10 @@ Also, there is no need for a privileged container (which is not recommended in a
 
 This tutorial is tested on `Ubuntu 24.04 LTS` and `Debian 12` LXCs. Things will differ slightly in different distributions, though. Additionally, if one wants to have HW-accelerated ML, it is not recommend to use older release of `Ubuntu`, as it has older version of dependency in its repository, introducing additional complexity, like package pinning.
 
-## Mount host volume to LXC container (Optional)
+## Hardware-accelerated machine learning
 
-This part of the guide is about mounting a directory from the host to a unprivileged container. The directory can be a SMB or a NFS share that is already mounted on the host, or any other local directory.
-
-Follow the guide at [another repository](https://github.com/loeeeee/loe-handbook-of-gpu-in-lxc/blob/main/src/mount-host-volume.md) of mine.
-
-And, that is it, EZ, right?
-
-## Hardware-accelerated machine learning: NVIDIA (Optional)
+<details>
+<summary>Nvidia</summary>
 
 Firstly, prepare a LXC with GPU available by following the guide at [another repository](https://github.com/loeeeee/loe-handbook-of-gpu-in-lxc/blob/main/src/gpu-passthrough.md) of mine. This process is referred to as NVIDIA GPU pass-through in LXC.
 
@@ -104,7 +114,7 @@ apt-get -y install cudnn-cuda-12
 In addition to the cuDNN, we also need libcublas12 things.
 
 ```bash
-apt install -y libcublaslt12 libcublas12
+apt install -y libcublaslt12 libcublas12 libcurand10
 ```
 
 <br>
@@ -138,7 +148,12 @@ apt install -y cuda-toolkit
 
 Zu easy, innit?
 
-## Hardware-accelerated machine learning: Intel/OpenVINO (Optional, Experimental)
+<br>
+</details>
+
+
+<details>
+<summary>Intel/OpenVINO</summary>
 
 This part is intended for users who would like to utilize Intel's OpenVINO execution provider. ([System requirement](https://docs.openvino.ai/2024/about-openvino/release-notes-openvino/system-requirements.html), [List of supported devices](https://docs.openvino.ai/2024/about-openvino/compatibility-and-support/supported-devices.html)) The document listed the support for not only Intel iGPU and dGPU, but also its NPU, which seems very cool.
 
@@ -167,7 +182,12 @@ Now, when installing Immich, it will be using OpenVINO as its ML backend.
 <br>
 </details>
 
-## Hardware-accelerated machine learning: Others (Optional)
+<br>
+</details>
+
+
+<details>
+<summary>Others</summary>
 
 Since Immich depends on ONNX runtime, it is **possible** that other hardware that is not officially supported by Immich can be used to do machine learning tasks. The idea here is that installing the dependency for the hardware following [ONNX's instruction](https://onnxruntime.ai/docs/execution-providers/#summary-of-supported-execution-providers). 
 
@@ -175,147 +195,13 @@ Some users have also reported successful results using GPU Transcoding in Immich
 
 Good luck and have fun!
 
-## Install utilities and databases
-
-### Postgresql
-
-As for postgresql, visit [official guide](https://www.postgresql.org/download/linux/ubuntu/) for latest guide on installing postgresql 16 and adding extension repo, as immich depends on a vector extension.
-
-```bash
-apt install -y postgresql-common
-/usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
-apt install -y postgresql-17 postgresql-17-pgvector
-```
-
-To prepare the database, we need to make some configuration.
-
-First, we need to become user `postgres`, and connect to the database,
-
-```bash
-su postgres
-psql
-```
-
-In the psql interface, we type in following SQL command,
-
-```SQL
-CREATE DATABASE immich;
-CREATE USER immich WITH ENCRYPTED PASSWORD 'A_SEHR_SAFE_PASSWORD';
-GRANT ALL PRIVILEGES ON DATABASE immich to immich;
-ALTER USER immich WITH SUPERUSER;
-\q
-```
-
-Note: change password, seriously.
-
-Note: To change back to the pre-su user, `exit` should do the trick.
-
-### FFmpeg with Hardware-acceleration
-
-Not all FFmpeg are built equal. In most cases, the ffmpeg shipped from distribution package manager does not support any kind of hardware acceleration. However, there is an easy fix, thanks to the great contributions made by Jellyfin team, as they maintain a version of FFmpeg that receives timely update and support most common hardware for more efficient transcoding. The list of supported hardware can be found at [*Supported Acceleration Methods*](https://jellyfin.org/docs/general/administration/hardware-acceleration#supported-acceleration-methods), and the list includes common hardware features, like NVENC, and QSV, or universal interface, like VAAPI. Here, we will be using this FFmpeg build to enable hw-acceleration in our Immich server.
-
-Side note, after some digging around, I found out that the official Immich docker image uses FFmpeg from Jellyfin as well. What a coincidence.
-
-To install the FFmpeg made by Jellyfin team, first, we need to add the repository of Jellyfin to the system package manager. Jellyfin documentation suggests slightly different approaches for `Ubuntu` and `Debian` for adding the repository.
-
-<details>
-<summary>Ubuntu 24.04</summary>
-
-The following commands is mostly copy-and-pastes from [the official installation documentation](https://jellyfin.org/docs/general/installation/linux#repository-manual), and is for `Ubuntu` and its derivatives. This terrifying chunk of commands add the Jellyfin repository to package manager.
-
-```bash
-apt install curl gnupg software-properties-common
-add-apt-repository universe
-mkdir -p /etc/apt/keyrings
-curl -fsSL https://repo.jellyfin.org/jellyfin_team.gpg.key | gpg --dearmor -o /etc/apt/keyrings/jellyfin.gpg
-export VERSION_OS="$( awk -F'=' '/^ID=/{ print $NF }' /etc/os-release )"
-export VERSION_CODENAME="$( awk -F'=' '/^VERSION_CODENAME=/{ print $NF }' /etc/os-release )"
-export DPKG_ARCHITECTURE="$( dpkg --print-architecture )"
-cat <<EOF | tee /etc/apt/sources.list.d/jellyfin.sources
-Types: deb
-URIs: https://repo.jellyfin.org/${VERSION_OS}
-Suites: ${VERSION_CODENAME}
-Components: main
-Architectures: ${DPKG_ARCHITECTURE}
-Signed-By: /etc/apt/keyrings/jellyfin.gpg
-EOF
-```
-
 <br>
 </details>
 
-<details>
-<summary>Debian 12</summary>
 
-The following commands is mostly copy-and-pasted from the above Ubuntu counterpart, some subtle changes are made because otherwise it won't work. Despite official guide of Jellyfin recommends using `extrepo`, it will not work here because previous script some how changed content in `/etc/os-release`, and thus, broke the `extrepo` method. Man, I hate package pinning and ancient packages in Debian repo.
+## Immich Installation
 
-```bash
-apt install curl gnupg
-mkdir -p /etc/apt/keyrings
-curl -fsSL https://repo.jellyfin.org/jellyfin_team.gpg.key | gpg --dearmor -o /etc/apt/keyrings/jellyfin.gpg
-export DPKG_ARCHITECTURE="$( dpkg --print-architecture )"
-cat <<EOF | tee /etc/apt/sources.list.d/jellyfin.sources
-Types: deb
-URIs: https://repo.jellyfin.org/debian
-Suites: bookworm
-Components: main
-Architectures: ${DPKG_ARCHITECTURE}
-Signed-By: /etc/apt/keyrings/jellyfin.gpg
-EOF
-```
-
-<br>
-</details>
-
-After one has added the Jellyfin repo into their package manager's list, we can install the FFmpeg from Jellyfin.
-
-```bash
-apt update
-apt install jellyfin-ffmpeg7
-```
-
-Finally, we soft link the Jellyfin FFmpeg to `/usr/bin/`
-
-We do not want to link the binary to `/bin` because in `Debian` and its derivatives, which includes `Ubuntu`, because the entire `/bin` folder is softlinked to `/usr/bin`. but doing either way does not seem to have a practical difference, besides linking to `/usr/bin` makes my brain happier.
-
-```bash
-ln -s /usr/lib/jellyfin-ffmpeg/ffmpeg  /usr/bin/ffmpeg
-ln -s /usr/lib/jellyfin-ffmpeg/ffprobe  /usr/bin/ffprobe
-```
-
-Now, calling `ffmpeg` should output a long gibberish, at least for normies.
-
-<details>
-<summary><h4>Alternative way of installing the latest FFmpeg (static build)</h4></summary>
-
-Download one from [FFmpeg Static Builds](https://johnvansickle.com/ffmpeg/). This may be the preferred way for a CPU-only user -- less complexity, less headache.
-
-```bash
-wget https://johnvansickle.com/ffmpeg/builds/ffmpeg-git-amd64-static.tar.xz
-tar -xf ffmpeg-git-amd64-static.tar.xz
-cp ffmpeg-git-amd64-static/ffmpeg /bin/ffmpeg
-```
-
-<br>
-</details>
-
-<details>
-<summary><h4>Alternative way of installing a FFmpeg (system package manager)</h4></summary>
-
-Download one from one's system package manager. Super simple.
-
-```bash
-apt install ffmpeg
-```
-
-<br>
-</details>
-
-### Redis
-
-Because no additional config is needed for Redis, we will install it in the later dependency script, `dep-*.sh`. Also, the Redis shipped with Ubuntu 24.04 and Debian 12 works fine out of box with Immich.
-
-### Immich User Creation
+### User creation
 
 First of all, create a Immich user, if you already done so in the above optional section, you may safely skip the following code block. The user created here will run Immich server.
 
@@ -324,49 +210,11 @@ adduser --shell /bin/bash --disabled-password immich --comment "Immich Mich"
 # --shell changes the default shell the immich user is using. In this case it will use /bin/bash, instead of the default /bin/sh, which lacks many eye-candy
 # --disabled-password skips creating password, and (sort of) only allows using su to access the user. If you need to change the password of the user, use the command: passwd immich
 # --comment adds user contact info, not super useful but mandatory, probably thanks to Unix legacy.
-# If the user immich needs sudo permissions, which is very very unlikely, use the command as root user: usermod -aG sudo immich
+apt install -y git
+usermod -aG video,render immich
 ```
 
-After creating the user, we should first install node.js for the user, Immich.
-
-### Node.js
-
-Immich works on a recent Node.js 20 LTS, and Ubuntu ships an ancient node.js. Thus. we need to go to [Node.js's download site](https://nodejs.org/en/download/package-manager) for the modern version.
-
-Because npm/nvm by default uses user installation, i.e, installing the binary at the home directory of current user, the following code should be executed in the shell environment of whichever user that runs Immich. Other installations, besides the coming installation script (`install.sh`), in this tutorial are global, however, meaning that they should be executed in sudo/root privilege.
-
-Assume one is currently login as user root, to change to the user we just created,
-
-```bash
-su immich
-```
-
-To change back to the pre-su user, `exit` should do the trick.
-
-After change to the Immich user, 
-
-(The following script is copy-pasted from the node.js's download website.)
-
-```bash
-# installs nvm (Node Version Manager)
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-# download and install Node.js (you may need to restart the terminal)
-nvm install 22
-# verifies the right Node.js version is in the environment
-node -v # should print `v22.*.*`
-# verifies the right npm version is in the environment
-npm -v # should print `10.*.*`
-```
-
-Now `exit` the immich user.
-
-Note: We may set `NVM_NODEJS_ORG_MIRROR` [environment variables](https://github.com/nvm-sh/nvm/issues/2378) in bash to use a proxy for installing node js
-
-## Install custom photo-processing library
-
-Likely because of license issue, many libraries included by distribution package managers do not support all the image format we want, e.g., HEIF, RAW, etc. Thus, we need compile these libraries from source. It can be painful to figure out how to do this, but luckily, I have already sorted out for you.
-
-### Install compile tools and compile 始める
+### Clone the repo
 
 I have make some helper script in this repo, so all one needs to do is clone the repo. We change to the user immich so that the files we cloned will have proper permission. And, just in case one does not know, the commands are as follow.
 
@@ -382,6 +230,13 @@ Additionally, it is recommend to have our working directory set to the repo's di
 cd immich-in-lxc
 ```
 
+### Install custom photo-processing library
+
+Likely because of license issue, many libraries included by distribution package managers do not support all the image format we want, e.g., HEIF, RAW, etc. Thus, we need compile these libraries from source. It can be painful to figure out how to do this, but luckily, I have already sorted out for you.
+
+#### Install compile tools and compile 始める
+
+
 Now `exit` the immich user, as the upcoming commands should be run as `root` user.
 
 ```bash
@@ -390,7 +245,47 @@ Now `exit` the immich user, as the upcoming commands should be run as `root` use
 
 It is just so satisfying to see the compiling log rolling down the terminal, ain't it? Look carefully at the log, though. There should not be any error. However, some warning about relink will pop up, which is normal.
 
-## Install Immich Server
+### Config PostgreSQL like a champ
+
+
+The following steps apply to both `Debian 12` and `Ubuntu 24.04` instances.
+
+Enter PostgreSQL control interface
+
+```bash
+# As root
+su postgres
+# Now you are user:postgres
+psql
+```
+
+In the psql interface, run:
+```SQL
+CREATE DATABASE immich;
+CREATE USER immich WITH ENCRYPTED PASSWORD 'A_SEHR_SAFE_PASSWORD';
+GRANT ALL PRIVILEGES ON DATABASE immich to immich;
+ALTER USER immich WITH SUPERUSER;
+\q
+```
+
+Note: change password, seriously.
+
+Note: To change back to the pre-su user, `exit` should do the trick.
+
+#### Database Migration for Existing Users (v1.133.0+)
+
+**Note:** Starting with Immich v1.133.0, the project has migrated from pgvecto.rs to [VectorChord](https://github.com/tensorchord/VectorChord) for better performance and stability.
+
+If you're upgrading from a version prior to v1.133.0 and have an existing Immich installation, you may need to perform a database migration. The migration from pgvecto.rs to VectorChord is automatic, but you should:
+
+1. **Backup your database** before upgrading
+2. Ensure you're upgrading from at least v1.107.2 or later
+
+**Note:** If you have an existing `$INSTALL_DIR/runtime.env` (e.g. /home/immich/runtime.env) file with `DB_VECTOR_EXTENSION=pgvector`, you should update it to `DB_VECTOR_EXTENSION=vectorchord` for the new VectorChord extension.
+
+For more details on the VectorChord migration, see the [official Immich v1.133.0 release notes](https://github.com/immich-app/immich/releases/tag/v1.133.0).
+
+### Install Immich Server
 
 The star of the show is the install script, i.e. `install.sh` in this repo. It installs or updates the current Immich instance. The Immich instance itself is stateless, thanks to its design. Thus, it is safe to delete the `app` folder that will resides inside `INSTALL_DIR` folder that we are about to config. 
 
@@ -398,7 +293,7 @@ Note: **DO NOT DELETE UPLOAD FOLDER SPECIFIED BY `INSTALL_DIR` IN `.env`**. It s
 
 Also note: One should always do a snapshot of the media folder during the updating or installation process, just in case something goes horribly wrong.
 
-### The environment variables
+#### The environment variables
 
 An example .env file that will be generated when no `.env` file is found inside current working directory when executing the script.
 
@@ -424,7 +319,7 @@ Note: The `immich` user should have read and write access to both `INSTALL_DIR` 
 
 Note: :new: means user might need to create the empty entry to make script run.
 
-### Run the script
+#### Run the script
 
 After the `.env` is properly configured, we are now ready to do the actual installation.
 
@@ -442,9 +337,13 @@ After several minutes, ideally, it would say,
 Done. Please install the systemd services to start using Immich.
 ```
 
-Lastly, we need to review and modify the `runtime.env` that is inside your specified `INSTALL_DIR` (not the runtime.env inside this repo). The default values could also work, unless you changed the `DB_PASSWORD` when installing Postgres. For Timezones `TZ`, you can consult them in the [TZ Database Wiki](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones#List).
+Lastly, we need to review and modify the `runtime.env` that is inside your specified `INSTALL_DIR` (not the runtime.env inside this repo). The default values could also work, unless you changed the `DB_PASSWORD` when installing Postgres. 
 
-### Post install script
+**Note:** If your `DB_PASSWORD` contains special characters (such as `$`, `!`, etc.), you must wrap the value in single quotes, e.g., `DB_PASSWORD='your$pec!alP@ss'`. This prevents shell expansion issues when the environment file is sourced. (See [issue #95](https://github.com/loeeeee/immich-in-lxc/issues/95) for details.)
+
+For Timezones `TZ`, you can consult them in the [TZ Database Wiki](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones#List).
+
+#### Post install script
 
 The post install script will copy the systemd service files to proper location (and overwrite the original ones), assuming one is using Ubuntu, or something similar. Additionally, it creates a folder for log at `/var/log/`. Both operation requires `sudo/root` privilege, so make sure to review the script before proceeding.
 
@@ -478,7 +377,7 @@ systemctl enable immich-ml && \
 systemctl enable immich-web
 ```
 
-### Immich config
+#### Immich config
 
 Because we are install Immich instance in a none docker environment, some DNS lookup will not work. For instance, we need to change the URL inside `Administration > Settings > Machine Learning Settings > URL` to `http://localhost:3003`, otherwise the web server cannot communicate with the ML backend.
 
@@ -488,7 +387,7 @@ Additionally, for LXC with CUDA or other GPU Transcoding support enabled, one ne
 
 The Immich server instance is designed to be stateless, meaning that deleting the instance, i.e. the `INSTALL_DIR/app` folder, (NOT DATABASE OR OTHER STATEFUL THINGS) will not break anything. Thus, to upgrade the current Immich instance, all one needs to do is essentially install the latest Immich.
 
-Before the update, one should **backup or at least snapshot the current container**.
+- **v1.133.0+ Breaking Changes:** If upgrading to v1.133.0 or later, ensure you're upgrading from at least v1.107.2 or later. If you're on an older version, upgrade to v1.107.2 first and ensure Immich starts successfully before continuing.
 
 First thing to do is to stop the old instance.
 
