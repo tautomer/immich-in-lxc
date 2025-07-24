@@ -108,8 +108,6 @@ jobs:
           sudo add-apt-repository -y ppa:deadsnakes/ppa
           sudo apt update
           sudo apt install -y python3.11 python3.11-venv python3.11-dev
-          # overwrite the default Python version
-          sudo ln -sf /usr/bin/python3.11 /usr/bin/python3
 
       - name: Pre-build
         env:
@@ -133,11 +131,37 @@ jobs:
           sudo chown -R immich:immich /home/immich/immich-in-lxc
           cd /home/immich/immich-in-lxc
           sudo ./dep-ubuntu.sh
-          sudo ./pre-install.sh
+          FUNCTIONS_TO_DISABLE=(
+              "install_postgresql"
+              "build_libjxl"
+              "build_libheif"
+              "build_libraw"
+              "build_image_magick"
+              "build_libvips"
+              "install_ffmpeg"
+              "install_runtime_component"
+          )
+
+          INPUT_SCRIPT="pre-install.sh"
+          TEMP_SCRIPT="/tmp/pre-install.sh"
+
+          # Build the sed command dynamically
+          SED_COMMAND=""
+          for func_name in "${FUNCTIONS_TO_DISABLE[@]}"; do
+              # This pattern matches the function name, followed by optional whitespace, and then the end of the line OR a comment.
+              # It specifically avoids lines that contain "() {"
+              SED_COMMAND+="-e '/^${func_name}[[:space:]]*\($\|#\)/s/^/# /' "
+          done
+
+          echo "Applying sed to comment out functions: ${FUNCTIONS_TO_DISABLE[*]}"
+          eval "sed ${SED_COMMAND} ${INPUT_SCRIPT} > ${TEMP_SCRIPT}"
+          sudo bash ${TEMP_SCRIPT}
           
       - name: Build immich server
         id: build
         run: |
+            # overwrite the default Python version
+            sudo ln -sf /usr/bin/python3.11 /usr/bin/python3
             sudo -iu immich bash -c 'export XDG_CONFIG_HOME=$HOME/.config; export POETRY_CONFIG_DIR=$HOME/.config/pypoetry; export NVM_DIR=$HOME/.nvm; cd /home/immich/immich-in-lxc; ./install.sh'
             sudo -iu immich bash -c 'ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python'
             sudo -iu immich bash -c 'ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3'
@@ -187,6 +211,7 @@ jobs:
             - Download `server.tar.gz` into the home folder of your LXC.
             - Remove `/home/immich/app` and `/home/immich/geodata` folders.
             - Extract the tarball using `tar -xf server.tar.gz`.
+            - Currently, `app/upload` is linked to `/mnt/photos/.immich`, which will 100% fail for your case. Please link it to a valid path on your setup `ln -sf /your/upload/path /home/immich/app/upload`.
             - If necessary, manually update runtime.env or run `./post-install.sh` to install/update systemd services. Since these files generally do not change with respect to immich updates, they are not included in the tarball.
             - Restart `immich-ml` and `immich-web` services.
 
