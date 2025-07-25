@@ -291,7 +291,6 @@ install_immich_web_server () {
     cp -a LICENSE $INSTALL_DIR_app/
     cp -a i18n $INSTALL_DIR/
     cp -a open-api/typescript-sdk $INSTALL_DIR_app/
-    cp -a docker/scripts/get-cpus.sh $INSTALL_DIR_app/
     cd ..
 }
 
