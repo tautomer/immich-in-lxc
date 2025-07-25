@@ -137,9 +137,9 @@ jobs:
               "build_libheif"
               "build_libraw"
               "build_image_magick"
-              "build_libvips"
               "install_ffmpeg"
               "install_runtime_component"
+              "git_clone"  
           )
 
           INPUT_SCRIPT="pre-install.sh"
@@ -155,6 +155,7 @@ jobs:
 
           echo "Applying sed to comment out functions: ${FUNCTIONS_TO_DISABLE[*]}"
           eval "sed ${SED_COMMAND} ${INPUT_SCRIPT} > ${TEMP_SCRIPT}"
+          sed -i '/{LIBVIPS_REVISION/c\ \ \ \ : "${LIBVIPS_REVISION:=8fa37a64547e392d3808eed8d72adab7e02b3d00}"' "${TEMP_SCRIPT}"
           sudo bash ${TEMP_SCRIPT}
           
       - name: Build immich server
@@ -162,7 +163,7 @@ jobs:
         run: |
             # overwrite the default Python version
             sudo ln -sf /usr/bin/python3.11 /usr/bin/python3
-            sudo -iu immich bash -c 'export XDG_CONFIG_HOME=$HOME/.config; export POETRY_CONFIG_DIR=$HOME/.config/pypoetry; export NVM_DIR=$HOME/.nvm; cd /home/immich/immich-in-lxc; ./install.sh'
+            sudo -iu immich bash -c 'export XDG_CONFIG_HOME=$HOME/.config; export POETRY_CONFIG_DIR=$HOME/.config/pypoetry; export NVM_DIR=$HOME/.nvm; cd /home/immich/immich-in-lxc; sed -i "s/# install_sharp_and_cli/install_sharp_and_cli/g" install.sh; ./install.sh'
             sudo -iu immich bash -c 'ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python'
             sudo -iu immich bash -c 'ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3'
             sudo -iu immich bash -c 'ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3.11'
