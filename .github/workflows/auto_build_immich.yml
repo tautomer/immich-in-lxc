@@ -2,8 +2,11 @@ name: Build immich on new release
 
 on:
   schedule:
-    - cron: '0 0 * * *' # Runs daily at midnight UTC (supposedly)
+    - cron: '0 0 * * *' # Runs daily at midnight UTC
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   Check-immich-release:
@@ -37,23 +40,19 @@ jobs:
           if [ "$LATEST_TAG" != "$PREV_TAG" ]; then
             echo "is_new_release=true" >> $GITHUB_ENV
             echo "is_new_release=true" >> $GITHUB_OUTPUT
-            # Update the repository variable
-            echo "::notice file=README.md::New release detected: $LATEST_TAG. Updating repository variable."
-            curl -X PATCH \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/${{ github.repository_owner }}/${{ github.repository }}/variables/LATEST_IMMICH_RELEASE \
-            -d '{"value":"'$LATEST_TAG'"}'
+            # Notice that a new release is detected and build/release will proceed
+            echo "::notice file=README.md::New release detected: $LATEST_TAG. Build and Release will proceed."
           else
             echo "is_new_release=false" >> $GITHUB_ENV
             echo "is_new_release=false" >> $GITHUB_OUTPUT
+            echo "::notice file=README.md::No new release detected. Skipping build and release."
           fi
 
   Build-immich:
     needs: Check-immich-release
     outputs:
       timestamp: ${{ steps.build.outputs.timestamp }}
-    if: needs.Check-immich-release.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch' # Added workflow_dispatch back for manual runs
+    if: needs.Check-immich-release.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout my fork
@@ -79,27 +78,13 @@ jobs:
         run: |
           sudo adduser --shell /bin/bash --disabled-password immich
           
-      - name: Install Jellyfin ffmpeg
+      - name: Install Jellyfin ffmpeg (mock)
         run: |
-          sudo apt install curl gnupg software-properties-common
-          sudo add-apt-repository universe
-          sudo mkdir -p /etc/apt/keyrings
-          curl -fsSL https://repo.jellyfin.org/jellyfin_team.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/jellyfin.gpg
-          export VERSION_OS="$( awk -F'=' '/^ID=/{ print $NF }' /etc/os-release )"
-          export VERSION_CODENAME="$( awk -F'=' '/^VERSION_CODENAME=/{ print $NF }' /etc/os-release )"
-          export DPKG_ARCHITECTURE="$( dpkg --print-architecture )"
-          cat <<-EOF | sudo tee /etc/apt/sources.list.d/jellyfin.sources
-          Types: deb
-          URIs: https://repo.jellyfin.org/${VERSION_OS}
-          Suites: ${VERSION_CODENAME}
-          Components: main
-          Architectures: ${DPKG_ARCHITECTURE}
-          Signed-By: /etc/apt/keyrings/jellyfin.gpg
-          EOF
-          sudo apt update
-          sudo apt install jellyfin-ffmpeg7
-          sudo ln -s /usr/lib/jellyfin-ffmpeg/ffmpeg  /usr/bin/ffmpeg
-          sudo ln -s /usr/lib/jellyfin-ffmpeg/ffprobe  /usr/bin/ffprobe
+          # ./install/sh checks if ffmpeg exists, but we are only aiming to build, not run, the server, so no need to install it
+          sudo touch /usr/bin/ffmpeg
+          sudo chmod +x /usr/bin/ffmpeg
+          sudo touch /usr/bin/ffprobe
+          sudo chmod +x /usr/bin/ffprobe
 
       - name: Install Python 3.11
         run: |
@@ -182,6 +167,8 @@ jobs:
     needs: [Build-immich, Check-immich-release]
     if: needs.Check-immich-release.outputs.is_new_release == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Needed for creating GitHub Releases
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v4
@@ -222,3 +209,21 @@ jobs:
           prerelease: false
           artifacts: app-release/server.tar.gz
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  Update-release-variable:
+    needs: [Release-immich-build, Check-immich-release]
+    if: needs.Check-immich-release.outputs.is_new_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Needed for updating repository variables
+      # or variables: write if you prefer more specific scope
+    steps:
+      - name: Update LATEST_IMMICH_RELEASE variable
+        run: |
+          LATEST_TAG=${{ needs.Check-immich-release.outputs.latest_release }}
+          echo "::notice file=README.md::Successfully created new release $LATEST_TAG. Updating repository variable."
+          curl -X PATCH \
+          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/repos/${{ github.repository }}/actions/variables/LATEST_IMMICH_RELEASE \
+          -d '{"value":"'$LATEST_TAG'"}'
