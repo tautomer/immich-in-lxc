@@ -112,7 +112,8 @@ jobs:
           sudo cp -r ${{ github.workspace }} /home/immich
           sudo chown -R immich:immich /home/immich/immich-in-lxc
           cd /home/immich/immich-in-lxc
-          sudo ./dep-ubuntu.sh
+          head -n -2 dep-ubuntu.sh > /tmp/dep-ubuntu.sh
+          sudo bash /tmp/dep-ubuntu.sh
           FUNCTIONS_TO_DISABLE=(
               "install_postgresql"
               "build_libjxl"
@@ -151,7 +152,7 @@ jobs:
               export NVM_DIR=$HOME/.nvm;
               cd /home/immich/immich-in-lxc;
               source install.env;
-              sed -i '\''/^dependencies = \[/a \    "numpy<2",'\'' $INSTALL_DIR/source/machine-learning/pyproject.toml;
+              sed -i '\''/^dependencies = \[/a\ \ \ \ "numpy<2",'\'' $INSTALL_DIR/source/machine-learning/pyproject.toml;
               sed -i "s/# install_sharp_and_cli/install_sharp_and_cli/g" install.sh;
               ./install.sh;
               ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python;
