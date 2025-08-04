@@ -145,19 +145,19 @@ jobs:
         run: |
             # overwrite the default Python version
             sudo ln -sf /usr/bin/python3.11 /usr/bin/python3
-            sudo -E -u immich bash << 'EOF'
-            export XDG_CONFIG_HOME=$HOME/.config
-            export POETRY_CONFIG_DIR=$HOME/.config/pypoetry
-            export NVM_DIR=$HOME/.nvm
-            cd /home/immich/immich-in-lxc
-            source install.env
-            sed -i '/^dependencies = \[/a \    "numpy<2",' $INSTALL_DIR/source/machine-learning/pyproject.toml
-            sed -i "s/# install_sharp_and_cli/install_sharp_and_cli/g" install.sh
-            ./install.sh
-            ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python
-            ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3
-            ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3.11
-            EOF
+            sudo -iu immich bash -c '
+              export XDG_CONFIG_HOME=$HOME/.config;
+              export POETRY_CONFIG_DIR=$HOME/.config/pypoetry;
+              export NVM_DIR=$HOME/.nvm;
+              cd /home/immich/immich-in-lxc;
+              source install.env;
+              sed -i '\''/^dependencies = \[/a \    "numpy<2",'\'' $INSTALL_DIR/source/machine-learning/pyproject.toml;
+              sed -i "s/# install_sharp_and_cli/install_sharp_and_cli/g" install.sh;
+              ./install.sh;
+              ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python;
+              ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3;
+              ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3.11
+            '
             echo "timestamp=$(date)" >> $GITHUB_OUTPUT
       - name: Archive app folder
         run: |
