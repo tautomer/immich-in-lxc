@@ -17,6 +17,7 @@ jobs:
         run: |
           # Get the latest release tag
           LATEST_TAG=$(curl -s https://api.github.com/repos/immich-app/immich/releases/latest | jq -r '.tag_name')
+          echo "latest_release=$LATEST_TAG" >> $GITHUB_ENV
           echo "latest_release=$LATEST_TAG" >> $GITHUB_OUTPUT
 
       - name: Compare latest release with stored one
@@ -24,16 +25,22 @@ jobs:
         env:
           STORED_RELEASE_VAR: ${{ vars.LATEST_IMMICH_RELEASE }} # Access the repository variable
         run: |
+          # Get the latest release tag from the first step
           LATEST_TAG=${{ steps.check.outputs.latest_release }}
+
+          # Read the previous release tag from the repository variable, fallback to empty if not found
           PREV_TAG="${{ env.STORED_RELEASE_VAR }}"
 
           echo "Latest tag: $LATEST_TAG"
           echo "Previous tag (from variable): $PREV_TAG"
 
           if [ "$LATEST_TAG" != "$PREV_TAG" ]; then
+            echo "is_new_release=true" >> $GITHUB_ENV
             echo "is_new_release=true" >> $GITHUB_OUTPUT
+            # Notice that a new release is detected and build/release will proceed
             echo "::notice file=README.md::New release detected: $LATEST_TAG. Build and Release will proceed."
           else
+            echo "is_new_release=false" >> $GITHUB_ENV
             echo "is_new_release=false" >> $GITHUB_OUTPUT
             echo "::notice file=README.md::No new release detected. Skipping build and release."
           fi
@@ -42,7 +49,6 @@ jobs:
     needs: Check-immich-release
     outputs:
       timestamp: ${{ steps.build.outputs.timestamp }}
-      install_dir: ${{ steps.set_install_dir.outputs.install_dir }} 
     if: needs.Check-immich-release.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
@@ -58,16 +64,17 @@ jobs:
           git checkout main
           git merge --ff-only upstream/main || echo "Already up-to-date"
           git push origin main || echo "No changes to push"
-
+          
       # this is global install which works for all users
       - name: Set up Node.js
         uses: actions/setup-node@v4.3.0
         with:
           node-version: '20'
-
+          
       - name: Create user immich
-        run: sudo adduser --shell /bin/bash --disabled-password --gecos "" immich
-
+        run: |
+          sudo adduser --shell /bin/bash --disabled-password immich
+          
       - name: Install Jellyfin ffmpeg (mock)
         run: |
           # ./install/sh checks if ffmpeg exists, but we are only aiming to build, not run, the server, so no need to install it
@@ -84,16 +91,15 @@ jobs:
           sudo apt update
           sudo apt install -y python3.11 python3.11-venv python3.11-dev
 
-      - name: Set INSTALL_DIR and Pre-build
-        id: set_install_dir 
+      - name: Pre-build
         env:
           IMMICH_VERSION: ${{ needs.Check-immich-release.outputs.latest_release }}
         run: |
           UPLOAD_DIR=/mnt/photos/.immich
-          INSTALL_DIR=/home/immich
-          echo "INSTALL_DIR=$INSTALL_DIR" >> $GITHUB_ENV
-          echo "install_dir=$INSTALL_DIR" >> $GITHUB_OUTPUT
+          export INSTALL_DIR=/home/immich
+          echo "INSTALL_DIR=/home/immich" >> $GITHUB_ENV
           sudo mkdir -p $UPLOAD_DIR
+          # create .env
           cat << EOF > ${{ github.workspace }}/.env
           REPO_TAG=$IMMICH_VERSION
           INSTALL_DIR=$INSTALL_DIR
@@ -110,21 +116,23 @@ jobs:
           sudo bash /tmp/dep-ubuntu.sh
           FUNCTIONS_TO_DISABLE=(
               "install_postgresql"
-              "change_locale"
               "build_libjxl"
               "build_libheif"
               "build_libraw"
               "build_image_magick"
               "install_ffmpeg"
               "install_runtime_component"
-              "git_clone"
+              "git_clone"  
           )
 
           INPUT_SCRIPT="pre-install.sh"
           TEMP_SCRIPT="/tmp/pre-install.sh"
 
+          # Build the sed command dynamically
           SED_COMMAND=""
           for func_name in "${FUNCTIONS_TO_DISABLE[@]}"; do
+              # This pattern matches the function name, followed by optional whitespace, and then the end of the line OR a comment.
+              # It specifically avoids lines that contain "() {"
               SED_COMMAND+="-e '/^${func_name}[[:space:]]*\($\|#\)/s/^/# /' "
           done
 
@@ -132,7 +140,7 @@ jobs:
           eval "sed ${SED_COMMAND} ${INPUT_SCRIPT} > ${TEMP_SCRIPT}"
           sed -i '/{LIBVIPS_REVISION/c\ \ \ \ : "${LIBVIPS_REVISION:=8fa37a64547e392d3808eed8d72adab7e02b3d00}"' "${TEMP_SCRIPT}"
           sudo bash ${TEMP_SCRIPT}
-
+          
       - name: Build immich server
         id: build
         run: |
@@ -151,15 +159,8 @@ jobs:
               ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3.11
             '
             echo "timestamp=$(date)" >> $GITHUB_OUTPUT
-
-  Archive-and-Upload-Artifact:
-    needs: [Build-immich, Check-immich-release]
-    if: needs.Check-immich-release.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
       - name: Archive app folder
         run: |
-          INSTALL_DIR=${{ needs.Build-immich.outputs.install_dir }}
           tar -czf server.tar.gz -C $INSTALL_DIR app geodata
 
       - name: Upload app as artifact
@@ -169,7 +170,7 @@ jobs:
           path: server.tar.gz
 
   Release-immich-build:
-    needs: [Archive-and-Upload-Artifact, Check-immich-release, Build-immich]
+    needs: [Build-immich, Check-immich-release]
     if: needs.Check-immich-release.outputs.is_new_release == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -192,7 +193,7 @@ jobs:
             - Built on: **${{ needs.Build-immich.outputs.timestamp }}**
             - Built for: Ubuntu 24.04 LTS with openvino for ML
 
-            **How to install**:
+            **How to install**:  
             - Follow the setup steps in the README up to (but not including) `pre-install.sh`.
             - Install Python 3.11 as `onnxruntime-openvino=1.18.0` was not built for Python 3.12.
               ```shell
@@ -208,7 +209,7 @@ jobs:
             - If necessary, manually update runtime.env or run `./post-install.sh` to install/update systemd services. Since these files generally do not change with respect to immich updates, they are not included in the tarball.
             - Restart `immich-ml` and `immich-web` services.
 
-            **Release details**:
+            **Release details**:  
             This release was created automatically by GitHub Actions. You can track the build process here: [GitHub Actions Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
           draft: false
           prerelease: false
