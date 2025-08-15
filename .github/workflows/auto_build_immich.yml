@@ -138,7 +138,8 @@ jobs:
 
           echo "Applying sed to comment out functions: ${FUNCTIONS_TO_DISABLE[*]}"
           eval "sed ${SED_COMMAND} ${INPUT_SCRIPT} > ${TEMP_SCRIPT}"
-          sed -i '/{LIBVIPS_REVISION/c\ \ \ \ : "${LIBVIPS_REVISION:=8fa37a64547e392d3808eed8d72adab7e02b3d00}"' "${TEMP_SCRIPT}"
+          # no longer needed
+          # sed -i '/{LIBVIPS_REVISION/c\ \ \ \ : "${LIBVIPS_REVISION:=8fa37a64547e392d3808eed8d72adab7e02b3d00}"' "${TEMP_SCRIPT}"
           sudo bash ${TEMP_SCRIPT}
           
       - name: Build immich server
@@ -151,7 +152,7 @@ jobs:
               export POETRY_CONFIG_DIR=$HOME/.config/pypoetry;
               export NVM_DIR=$HOME/.nvm;
               cd /home/immich/immich-in-lxc;
-              sed -i "/cd \$INSTALL_DIR_src\/machine-learning/a\    sed -i '\''/^dependencies = \\\[/a\\\    \\\"numpy<2.0.0\\\",'\'' pyproject.toml" install.sh;
+              sed -i "/poetry install --no-root --extras openvino/i\ \ \ \ \ \ \ \ poetry add ''numpy<2''\n\ \ \ \ \ \ \ \ poetry update --lock" install.sh;
               sed -i "s/# install_sharp_and_cli/install_sharp_and_cli/g" install.sh;
               ./install.sh;
               ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python;
