@@ -23,7 +23,7 @@ jobs:
       - name: Compare latest release with stored one
         id: compare
         env:
-          STORED_RELEASE_VAR: ${{ vars.LATEST_IMMICH_RELEASE }} # Access the repository variable
+          STORED_RELEASE_VAR: ${{ vars.LATEST_IMMICH_RELEASE }}
         run: |
           # Get the latest release tag from the first step
           LATEST_TAG=${{ steps.check.outputs.latest_release }}
@@ -94,8 +94,8 @@ jobs:
       - name: Pre-build
         env:
           IMMICH_VERSION: ${{ needs.Check-immich-release.outputs.latest_release }}
+          UPLOAD_DIR: ${{ vars.UPLOAD_DIR }}
         run: |
-          UPLOAD_DIR=/mnt/photos/.immich
           export INSTALL_DIR=/home/immich
           echo "INSTALL_DIR=/home/immich" >> $GITHUB_ENV
           sudo mkdir -p $UPLOAD_DIR
@@ -138,8 +138,6 @@ jobs:
 
           echo "Applying sed to comment out functions: ${FUNCTIONS_TO_DISABLE[*]}"
           eval "sed ${SED_COMMAND} ${INPUT_SCRIPT} > ${TEMP_SCRIPT}"
-          # no longer needed
-          # sed -i '/{LIBVIPS_REVISION/c\ \ \ \ : "${LIBVIPS_REVISION:=8fa37a64547e392d3808eed8d72adab7e02b3d00}"' "${TEMP_SCRIPT}"
           sudo bash ${TEMP_SCRIPT}
           
       - name: Build immich server
