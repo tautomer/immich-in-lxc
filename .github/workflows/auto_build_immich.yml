@@ -123,6 +123,7 @@ jobs:
               # "build_image_magick"
               "install_ffmpeg"
               "install_runtime_component"
+              "add_runtime_dependency"
               "git_clone"  
           )
 
@@ -139,9 +140,11 @@ jobs:
 
           echo "Applying sed to comment out functions: ${FUNCTIONS_TO_DISABLE[*]}"
           eval "sed ${SED_COMMAND} ${INPUT_SCRIPT} > ${TEMP_SCRIPT}"
-          sed -i "/cmake --install \./a \    cmake --install . --prefix=\/home\/immich" "${TEMP_SCRIPT}"
+          sed -i "/cmake --install \./a \    cmake --install . --prefix=\/usr\/local -- DESTDIR=\/home\/immich" "${TEMP_SCRIPT}"
           sed -i "/make install/a \    make install DESTDIR=\/home\/immich" "${TEMP_SCRIPT}"
-          sed -i "/ninja install/a \    ninja install DESTDIR=\/home\/immich" "${TEMP_SCRIPT}"
+          sed -i "/ninja install/i\    export DESTDIR=\/home\/immich" "${TEMP_SCRIPT}"
+          sed -i "/cpanminus/i \        libltdl-dev \\\\" "${TEMP_SCRIPT}"
+          sed -i "/autoreconf --install/i\    sed -i '1iAC_CONFIG_AUX_DIR([.])' configure.ac" "${TEMP_SCRIPT}"
           sudo bash ${TEMP_SCRIPT}
           
       - name: Build immich server
@@ -150,17 +153,21 @@ jobs:
             # overwrite the default Python version
             sudo ln -sf /usr/bin/python3.11 /usr/bin/python3
             sudo -iu immich bash -c '
-              export XDG_CONFIG_HOME=$HOME/.config;
-              export POETRY_CONFIG_DIR=$HOME/.config/pypoetry;
-              export NVM_DIR=$HOME/.nvm;
-              cd /home/immich/immich-in-lxc;
-              sed -i "/poetry install --no-root --extras openvino/i\ \ \ \ \ \ \ \ poetry add '\''numpy<2'\''\n\ \ \ \ \ \ \ \ poetry update --lock" install.sh;
-              sed -i "s/# install_sharp_and_cli/install_sharp_and_cli/g" install.sh;
-              ./install.sh;
-              ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python;
-              ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3;
-              ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3.11
+                mkdir ~/app;
+                mkdir ~/geodata
             '
+            # sudo -iu immich bash -c '
+            #   export XDG_CONFIG_HOME=$HOME/.config;
+            #   export POETRY_CONFIG_DIR=$HOME/.config/pypoetry;
+            #   export NVM_DIR=$HOME/.nvm;
+            #   cd /home/immich/immich-in-lxc;
+            #   sed -i "/poetry install --no-root --extras openvino/i\ \ \ \ \ \ \ \ poetry add '\''numpy<2'\''\n\ \ \ \ \ \ \ \ poetry update --lock" install.sh;
+            #   sed -i "s/# install_sharp_and_cli/install_sharp_and_cli/g" install.sh;
+            #   ./install.sh;
+            #   ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python;
+            #   ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3;
+            #   ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3.11
+            # '
             echo "timestamp=$(date)" >> $GITHUB_OUTPUT
       - name: Archive app folder
         run: |
