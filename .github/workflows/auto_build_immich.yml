@@ -57,14 +57,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      # this could be dangerous. we should always examine the changes from the upstream and merge manually
-      # - name: Sync with upstream loeeeee/immich-in-lxc
-      #   run: |
-      #     git remote add upstream https://github.com/loeeeee/immich-in-lxc.git || true
-      #     git fetch upstream
-      #     git checkout main
-      #     git merge --ff-only upstream/main || echo "Already up-to-date"
-      #     git push origin main || echo "No changes to push"
+      - name: Sync with upstream loeeeee/immich-in-lxc
+        run: |
+          git remote add upstream https://github.com/loeeeee/immich-in-lxc.git || true
+          git fetch upstream
+          git checkout main
+          git merge --ff-only upstream/main || echo "Already up-to-date"
+          git push origin main || echo "No changes to push"
           
       # this is global install which works for all users
       - name: Set up Node.js
@@ -117,13 +116,12 @@ jobs:
           sudo bash /tmp/dep-ubuntu.sh
           FUNCTIONS_TO_DISABLE=(
               "install_postgresql"
-              # "build_libjxl"
-              # "build_libheif"
-              # "build_libraw"
-              # "build_image_magick"
+              "build_libjxl"
+              "build_libheif"
+              "build_libraw"
+              "build_image_magick"
               "install_ffmpeg"
               "install_runtime_component"
-              "add_runtime_dependency"
               "git_clone"  
           )
 
@@ -140,11 +138,6 @@ jobs:
 
           echo "Applying sed to comment out functions: ${FUNCTIONS_TO_DISABLE[*]}"
           eval "sed ${SED_COMMAND} ${INPUT_SCRIPT} > ${TEMP_SCRIPT}"
-          sed -i "/cmake --install \./a \    cmake --install . --prefix=\/usr\/local -- DESTDIR=\/home\/immich" "${TEMP_SCRIPT}"
-          sed -i "/make install/a \    make install DESTDIR=\/home\/immich" "${TEMP_SCRIPT}"
-          sed -i "/ninja install/i\    export DESTDIR=\/home\/immich" "${TEMP_SCRIPT}"
-          sed -i "/cpanminus/i \        libltdl-dev \\\\" "${TEMP_SCRIPT}"
-          sed -i "/autoreconf --install/i\    sed -i '1iAC_CONFIG_AUX_DIR([.])' configure.ac" "${TEMP_SCRIPT}"
           sudo bash ${TEMP_SCRIPT}
           
       - name: Build immich server
@@ -153,25 +146,21 @@ jobs:
             # overwrite the default Python version
             sudo ln -sf /usr/bin/python3.11 /usr/bin/python3
             sudo -iu immich bash -c '
-                mkdir ~/app;
-                mkdir ~/geodata
+              export XDG_CONFIG_HOME=$HOME/.config;
+              export POETRY_CONFIG_DIR=$HOME/.config/pypoetry;
+              export NVM_DIR=$HOME/.nvm;
+              cd /home/immich/immich-in-lxc;
+              sed -i "/poetry install --no-root --extras openvino/i\ \ \ \ \ \ \ \ poetry add '\''numpy<2'\''\n\ \ \ \ \ \ \ \ poetry update --lock" install.sh;
+              sed -i "s/# install_sharp_and_cli/install_sharp_and_cli/g" install.sh;
+              ./install.sh;
+              ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python;
+              ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3;
+              ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3.11
             '
-            # sudo -iu immich bash -c '
-            #   export XDG_CONFIG_HOME=$HOME/.config;
-            #   export POETRY_CONFIG_DIR=$HOME/.config/pypoetry;
-            #   export NVM_DIR=$HOME/.nvm;
-            #   cd /home/immich/immich-in-lxc;
-            #   sed -i "/poetry install --no-root --extras openvino/i\ \ \ \ \ \ \ \ poetry add '\''numpy<2'\''\n\ \ \ \ \ \ \ \ poetry update --lock" install.sh;
-            #   sed -i "s/# install_sharp_and_cli/install_sharp_and_cli/g" install.sh;
-            #   ./install.sh;
-            #   ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python;
-            #   ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3;
-            #   ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3.11
-            # '
             echo "timestamp=$(date)" >> $GITHUB_OUTPUT
       - name: Archive app folder
         run: |
-          tar -czf server.tar.gz -C $INSTALL_DIR app geodata usr
+          tar -czf server.tar.gz -C $INSTALL_DIR app geodata
 
       - name: Upload app as artifact
         uses: actions/upload-artifact@v4
