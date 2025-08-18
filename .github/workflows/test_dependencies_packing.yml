@@ -37,9 +37,10 @@ jobs:
           PROXY_NPM_DIST=
           PROXY_POETRY=
           EOF
-          sudo cp -r ${{ github.workspace }} /home/immich
-          sudo chown -R immich:immich /home/immich/immich-in-lxc
-          cd /home/immich/immich-in-lxc
+          user=$(whoami)
+          sudo cp -r ${{ github.workspace }} /home/$user
+          sudo chown -R $user:$user /home/$user/immich-in-lxc
+          cd /home/$user/immich-in-lxc
           head -n -2 dep-ubuntu.sh > /tmp/dep-ubuntu.sh
           sudo bash /tmp/dep-ubuntu.sh
           FUNCTIONS_TO_DISABLE=(
@@ -67,9 +68,9 @@ jobs:
 
           echo "Applying sed to comment out functions: ${FUNCTIONS_TO_DISABLE[*]}"
           eval "sed ${SED_COMMAND} ${INPUT_SCRIPT} > ${TEMP_SCRIPT}"
-          sed -i "/cmake --install \./a \    DESTDIR=\/home\/runner cmake --install . --prefix=\/usr\/local" "${TEMP_SCRIPT}"
-          sed -i "/make install/a \    make install DESTDIR=\/home\/runner" "${TEMP_SCRIPT}"
-          sed -i "/ninja install/i\    export DESTDIR=\/home\/runner" "${TEMP_SCRIPT}"
+          sed -i "/cmake --install \./a \    DESTDIR=\/home\/$user cmake --install . --prefix=\/usr\/local" "${TEMP_SCRIPT}"
+          sed -i "/make install/a \    make install DESTDIR=\/home\/$user" "${TEMP_SCRIPT}"
+          sed -i "/ninja install/i\    export DESTDIR=\/home\/$user" "${TEMP_SCRIPT}"
           sed -i "/cpanminus/i \        libltdl-dev \\\\" "${TEMP_SCRIPT}"
           sed -i "/autoreconf --install/i\    sed -i '1iAC_CONFIG_AUX_DIR([.])' configure.ac" "${TEMP_SCRIPT}"
           sudo bash ${TEMP_SCRIPT}
