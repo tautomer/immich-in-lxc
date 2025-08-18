@@ -116,10 +116,10 @@ jobs:
           sudo bash /tmp/dep-ubuntu.sh
           FUNCTIONS_TO_DISABLE=(
               "install_postgresql"
-              "build_libjxl"
-              "build_libheif"
-              "build_libraw"
-              "build_image_magick"
+              # "build_libjxl"
+              # "build_libheif"
+              # "build_libraw"
+              # "build_image_magick"
               "install_ffmpeg"
               "install_runtime_component"
               "git_clone"  
@@ -138,6 +138,9 @@ jobs:
 
           echo "Applying sed to comment out functions: ${FUNCTIONS_TO_DISABLE[*]}"
           eval "sed ${SED_COMMAND} ${INPUT_SCRIPT} > ${TEMP_SCRIPT}"
+          sed -i "/cmake --install \./a \    cmake --install . --prefix=\/home\/immich" "${TEMP_SCRIPT}"
+          sed -i "/make install/a \    make install DESTDIR=\/home\/immich" "${TEMP_SCRIPT}"
+          sed -i "/ninja install/a \    ninja install DESTDIR=\/home\/immich" "${TEMP_SCRIPT}"
           sudo bash ${TEMP_SCRIPT}
           
       - name: Build immich server
@@ -160,7 +163,7 @@ jobs:
             echo "timestamp=$(date)" >> $GITHUB_OUTPUT
       - name: Archive app folder
         run: |
-          tar -czf server.tar.gz -C $INSTALL_DIR app geodata
+          tar -czf server.tar.gz -C $INSTALL_DIR app geodata usr
 
       - name: Upload app as artifact
         uses: actions/upload-artifact@v4
