@@ -59,7 +59,7 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
 
-      - name: Trigger and wait for build_dependencies workflow
+      - name: Trigger build_dependencies workflow
         run: |
           gh workflow run build_dependencies.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG 
           RUN_ID=""
@@ -83,10 +83,11 @@ jobs:
             echo "Failed to get workflow run ID. Exiting."
             exit 1
           fi
-          
-      - name: Trigger and wait for build_server workflow
+          echo "DEPS_RUN_ID=$RUN_ID" >> $GITHUB_ENV
+
+      - name: Trigger build_server workflow
         run: |
-          gh workflow run build_server.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG 
+          gh workflow run build_server.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG -f deps_run_id=$DEPS_RUN_ID
           RUN_ID=""
           RETRY_COUNT=0
     
