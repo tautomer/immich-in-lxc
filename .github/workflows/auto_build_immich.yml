@@ -45,6 +45,12 @@ jobs:
           echo "is_new_release=false" >> $GITHUB_OUTPUT
           echo "::notice file=README.md::No new release detected. Skipping build and release."
         fi
+    
+    - name: Checkout repository
+      if: steps.compare.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch'
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.ref_name }}
       
     - name: Trigger build workflows
       if: steps.compare.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch'
