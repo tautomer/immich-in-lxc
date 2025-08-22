@@ -1,8 +1,9 @@
-name: Build immich on new release
+# Simplified check_version.yml
+name: Check for New Immich Version
 
 on:
   schedule:
-    - cron: '0 0 * * *' # Runs daily at midnight UTC
+    - cron: '0 0 * * *'
   workflow_dispatch:
 
 jobs:
@@ -12,220 +13,51 @@ jobs:
       latest_release: ${{ steps.check.outputs.latest_release }}
       is_new_release: ${{ steps.compare.outputs.is_new_release }}
     steps:
-      - name: Get latest Immich release
-        id: check
-        run: |
-          # Get the latest release tag
-          LATEST_TAG=$(curl -s https://api.github.com/repos/immich-app/immich/releases/latest | jq -r '.tag_name')
-          echo "latest_release=$LATEST_TAG" >> $GITHUB_ENV
-          echo "latest_release=$LATEST_TAG" >> $GITHUB_OUTPUT
+    - name: Get latest Immich release
+      id: check
+      run: |
+        # Get the latest release tag
+        LATEST_TAG=$(curl -s https://api.github.com/repos/immich-app/immich/releases/latest | jq -r '.tag_name')
+        echo "latest_release=$LATEST_TAG" >> $GITHUB_ENV
+        echo "latest_release=$LATEST_TAG" >> $GITHUB_OUTPUT
 
-      - name: Compare latest release with stored one
-        id: compare
-        env:
-          STORED_RELEASE_VAR: ${{ vars.LATEST_IMMICH_RELEASE }}
-        run: |
-          # Get the latest release tag from the first step
-          LATEST_TAG=${{ steps.check.outputs.latest_release }}
+    - name: Compare latest release with stored one
+      id: compare
+      env:
+        STORED_RELEASE_VAR: ${{ vars.LATEST_IMMICH_RELEASE }}
+      run: |
+        # Get the latest release tag from the first step
+        LATEST_TAG=${{ steps.check.outputs.latest_release }}
 
-          # Read the previous release tag from the repository variable, fallback to empty if not found
-          PREV_TAG="${{ env.STORED_RELEASE_VAR }}"
+        # Read the previous release tag from the repository variable, fallback to empty if not found
+        PREV_TAG="${{ env.STORED_RELEASE_VAR }}"
 
-          echo "Latest tag: $LATEST_TAG"
-          echo "Previous tag (from variable): $PREV_TAG"
+        echo "Latest tag: $LATEST_TAG"
+        echo "Previous tag (from variable): $PREV_TAG"
 
-          if [ "$LATEST_TAG" != "$PREV_TAG" ]; then
-            echo "is_new_release=true" >> $GITHUB_ENV
-            echo "is_new_release=true" >> $GITHUB_OUTPUT
-            # Notice that a new release is detected and build/release will proceed
-            echo "::notice file=README.md::New release detected: $LATEST_TAG. Build and Release will proceed."
-          else
-            echo "is_new_release=false" >> $GITHUB_ENV
-            echo "is_new_release=false" >> $GITHUB_OUTPUT
-            echo "::notice file=README.md::No new release detected. Skipping build and release."
-          fi
-
-  Build-immich:
-    needs: Check-immich-release
-    outputs:
-      timestamp: ${{ steps.build.outputs.timestamp }}
-    if: needs.Check-immich-release.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout my fork
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Sync with upstream loeeeee/immich-in-lxc
-        run: |
-          git remote add upstream https://github.com/loeeeee/immich-in-lxc.git || true
-          git fetch upstream
-          git checkout main
-          git merge --ff-only upstream/main || echo "Already up-to-date"
-          git push origin main || echo "No changes to push"
-          
-      # this is global install which works for all users
-      - name: Set up Node.js
-        uses: actions/setup-node@v4.3.0
-        with:
-          node-version: '20'
-          
-      - name: Create user immich
-        run: |
-          sudo adduser --shell /bin/bash --disabled-password immich
-          
-      - name: Install Jellyfin ffmpeg (mock)
-        run: |
-          # ./install/sh checks if ffmpeg exists, but we are only aiming to build, not run, the server, so no need to install it
-          sudo touch /usr/bin/ffmpeg
-          sudo chmod +x /usr/bin/ffmpeg
-          sudo touch /usr/bin/ffprobe
-          sudo chmod +x /usr/bin/ffprobe
-
-      - name: Install Python 3.11
-        run: |
-          # install Python 3.11
-          # before onnxruntime-openvino is bumped, we can only use Python 3.11
-          sudo add-apt-repository -y ppa:deadsnakes/ppa
-          sudo apt update
-          sudo apt install -y python3.11 python3.11-venv python3.11-dev
-
-      - name: Pre-build
-        env:
-          IMMICH_VERSION: ${{ needs.Check-immich-release.outputs.latest_release }}
-          UPLOAD_DIR: ${{ vars.UPLOAD_DIR }}
-        run: |
-          export INSTALL_DIR=/home/immich
-          echo "INSTALL_DIR=/home/immich" >> $GITHUB_ENV
-          sudo mkdir -p $UPLOAD_DIR
-          # create .env
-          cat << EOF > ${{ github.workspace }}/.env
-          REPO_TAG=$IMMICH_VERSION
-          INSTALL_DIR=$INSTALL_DIR
-          UPLOAD_DIR=$UPLOAD_DIR
-          isCUDA=openvino
-          PROXY_NPM=
-          PROXY_NPM_DIST=
-          PROXY_POETRY=
-          EOF
-          sudo cp -r ${{ github.workspace }} /home/immich
-          sudo chown -R immich:immich /home/immich/immich-in-lxc
-          cd /home/immich/immich-in-lxc
-          head -n -2 dep-ubuntu.sh > /tmp/dep-ubuntu.sh
-          sudo bash /tmp/dep-ubuntu.sh
-          FUNCTIONS_TO_DISABLE=(
-              "install_postgresql"
-              "build_libjxl"
-              "build_libheif"
-              "build_libraw"
-              "build_image_magick"
-              "install_ffmpeg"
-              "install_runtime_component"
-              "git_clone"  
-          )
-
-          INPUT_SCRIPT="pre-install.sh"
-          TEMP_SCRIPT="/tmp/pre-install.sh"
-
-          # Build the sed command dynamically
-          SED_COMMAND=""
-          for func_name in "${FUNCTIONS_TO_DISABLE[@]}"; do
-              # This pattern matches the function name, followed by optional whitespace, and then the end of the line OR a comment.
-              # It specifically avoids lines that contain "() {"
-              SED_COMMAND+="-e '/^${func_name}[[:space:]]*\($\|#\)/s/^/# /' "
-          done
-
-          echo "Applying sed to comment out functions: ${FUNCTIONS_TO_DISABLE[*]}"
-          eval "sed ${SED_COMMAND} ${INPUT_SCRIPT} > ${TEMP_SCRIPT}"
-          sudo bash ${TEMP_SCRIPT}
-          
-      - name: Build immich server
-        id: build
-        run: |
-            # overwrite the default Python version
-            sudo ln -sf /usr/bin/python3.11 /usr/bin/python3
-            sudo -iu immich bash -c '
-              export XDG_CONFIG_HOME=$HOME/.config;
-              export POETRY_CONFIG_DIR=$HOME/.config/pypoetry;
-              export NVM_DIR=$HOME/.nvm;
-              cd /home/immich/immich-in-lxc;
-              sed -i "/poetry install --no-root --extras openvino/i\ \ \ \ \ \ \ \ poetry add '\''numpy<2'\''\n\ \ \ \ \ \ \ \ poetry update --lock" install.sh;
-              sed -i "s/# install_sharp_and_cli/install_sharp_and_cli/g" install.sh;
-              ./install.sh;
-              ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python;
-              ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3;
-              ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3.11
-            '
-            echo "timestamp=$(date)" >> $GITHUB_OUTPUT
-      - name: Archive app folder
-        run: |
-          tar -czf server.tar.gz -C $INSTALL_DIR app geodata
-
-      - name: Upload app as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: immich-app-${{ needs.Check-immich-release.outputs.latest_release }}
-          path: server.tar.gz
-
-  Release-immich-build:
-    needs: [Build-immich, Check-immich-release]
-    if: needs.Check-immich-release.outputs.is_new_release == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write # Needed for creating GitHub Releases
-    steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: immich-app-${{ needs.Check-immich-release.outputs.latest_release }}
-          path: app-release
-
-      - name: Create GitHub Release
-        uses: ncipollo/release-action@v1
-        with:
-          tag: ${{ needs.Check-immich-release.outputs.latest_release }}
-          name: immich server ${{ needs.Check-immich-release.outputs.latest_release }} with openvino for Ubuntu 24.04
-          body: |
-            This release contains the latest build of immich server:
-            - Version: **${{ needs.Check-immich-release.outputs.latest_release }}**
-            - Built on: **${{ needs.Build-immich.outputs.timestamp }}**
-            - Built for: Ubuntu 24.04 LTS with openvino for ML
-
-            **How to install**:  
-            - Follow the setup steps in the README up to (but not including) `pre-install.sh`.
-            - Install Python 3.11 as `onnxruntime-openvino=1.18.0` was not built for Python 3.12.
-              ```shell
-              add-apt-repository ppa:deadsnakes/ppa
-              apt update
-              # venv and header files are needed as well
-              apt install python3.11 python3.11-venv python3.11-dev
-              ```
-            - Download `server.tar.gz` into the home folder of your LXC.
-            - Remove `/home/immich/app` and `/home/immich/geodata` folders.
-            - Extract the tarball using `tar -xf server.tar.gz`.
-            - Currently, `app/upload` is linked to `/mnt/photos/.immich`, which will 100% fail for your case. Please link it to a valid path on your setup `ln -sf /your/upload/path /home/immich/app/upload`.
-            - If necessary, manually update runtime.env or run `./post-install.sh` to install/update systemd services. Since these files generally do not change with respect to immich updates, they are not included in the tarball.
-            - Restart `immich-ml` and `immich-web` services.
-
-            **Release details**:  
-            This release was created automatically by GitHub Actions. You can track the build process here: [GitHub Actions Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
-          draft: false
-          prerelease: false
-          artifacts: app-release/server.tar.gz
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-  Update-release-variable:
-    needs: [Release-immich-build, Check-immich-release]
-    if: needs.Check-immich-release.outputs.is_new_release == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Update LATEST_IMMICH_RELEASE variable
-        run: |
-          LATEST_TAG=${{ needs.Check-immich-release.outputs.latest_release }}
-          echo "::notice file=README.md::Successfully created new release $LATEST_TAG. Updating repository variable."
-          curl -X PATCH \
-          -H "Authorization: token ${{ secrets.ACTIONS_PAT }}" \
-          -H "Accept: application/vnd.github.v3+json" \
-          https://api.github.com/repos/${{ github.repository }}/actions/variables/LATEST_IMMICH_RELEASE \
-          -d '{"value":"'$LATEST_TAG'"}'
+        if [ "$LATEST_TAG" != "$PREV_TAG" ]; then
+          echo "is_new_release=true" >> $GITHUB_ENV
+          echo "is_new_release=true" >> $GITHUB_OUTPUT
+          # Notice that a new release is detected and build/release will proceed
+          echo "::notice file=README.md::New release detected: $LATEST_TAG. Build and Release will proceed."
+        else
+          echo "is_new_release=false" >> $GITHUB_ENV
+          echo "is_new_release=false" >> $GITHUB_OUTPUT
+          echo "::notice file=README.md::No new release detected. Skipping build and release."
+        fi
+      
+    - name: Trigger build workflows
+      if: steps.compare.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch'
+      run: |
+        LATEST_TAG=${{ steps.check.outputs.latest_release }}
+        IS_NEW_RELEASE=${{ steps.compare.outputs.is_new_release }}
+        gh workflow run build_dependencies.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG
+        gh workflow run build_server.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG
+        if [ "${IS_NEW_RELEASE}" == 'true' ]; then
+          echo "::notice file=README.md::New release detected, triggering release workflow."
+          gh workflow run release_immich.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG -f timestamp=$(date)
+        else
+          echo "::notice file=README.md::Same version already released. Skipping release workflow."
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

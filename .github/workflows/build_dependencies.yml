@@ -1,0 +1,161 @@
+name: Build Immich Dependencies
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Immich release tag'
+        required: true
+
+jobs:
+  Build-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install --no-install-recommends -yqq \
+            jq \ 
+            curl \
+            git \
+            autoconf \
+            build-essential \
+            cmake \
+            libbrotli-dev \
+            libde265-dev \
+            libexif-dev \
+            libexpat1-dev \
+            libglib2.0-dev \
+            libgsf-1-dev \
+            liblcms2-2 \
+            libspng-dev \
+            librsvg2-dev \
+            meson \
+            ninja-build \
+            pkg-config \
+            wget \
+            zlib1g \
+            libltdl-dev \
+            cpanminus \
+            libtool \
+            liblcms2-dev \
+            libgif-dev \
+            libpango1.0-dev \
+            libdav1d-dev \
+            libhwy-dev \
+            libwebp-dev \
+            libio-compress-brotli-perl \
+            libaom-dev
+
+      - name: Download previous dependencies for latest release
+        id: download_from_release
+        run: |
+          # We will try to restore the dependencies built from the latest (last) release
+          # Then check if there is any update in the new release
+          # The file is expected to be named dependencies.tar.gz
+          # containing dummy deps/usr folder with all the dependencies and a deps/.json folder saving the versions of the dependencies
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/latest/download/dependencies.tar.gz"
+          # The `|| true` prevents the step from failing if the download URL returns a 404,
+          # allowing us to handle the error gracefully.
+          curl -L -s -f -o dependencies.tar.gz "$DOWNLOAD_URL" || true
+    
+          # Check if the file was successfully downloaded
+          if [ -f "dependencies.tar.gz" ]; then
+            echo "Previous artifact found and downloaded."
+            echo "PREVIOUS_ARTIFACT_FOUND=true" >> "$GITHUB_ENV"
+          else
+            echo "No previous artifact found or download failed. Proceeding with full build."
+            echo "PREVIOUS_ARTIFACT_FOUND=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Prepare build environment
+        id: prepare_build
+        run: |
+          # Create the dependency folders
+          mkdir -p "$HOME/deps/usr"
+          mkdir -p "$HOME/deps/.json"
+
+          # Unpack old artifact if it exists
+          if [ "$PREVIOUS_ARTIFACT_FOUND" = "true" ]; then
+            echo "Unpacking previous artifact..."
+            tar -xzf dependencies.tar.gz -C "$HOME"
+            echo "build_all=false" >> $GITHUB_ENV
+          else
+            echo "No previous artifact found. All packages will be built."
+            echo "build_all=true" >> $GITHUB_ENV
+          fi
+
+      - name: Find base-image commit
+        id: find_commit
+        run: |
+          IMMICH_VERSION=${{ github.event.inputs.version }}
+          # get the Dockerfile content from GitHub API and parse the base image tag
+          BASE_IMAGE_TAG=$(curl -sL \
+            -H "Accept: application/vnd.github.v3.raw" \
+            "https://api.github.com/repos/immich-app/immich/contents/server/Dockerfile?ref=${IMMICH_VERSION}" | \
+            grep 'FROM ghcr.io/immich-app/base-server-dev:' | \
+            awk -F'[:@]' '{print $2}')
+
+          echo "Found base image tag: $BASE_IMAGE_TAG"
+
+          # use the GitHub Releases API to find the commit SHA for that tag
+          COMMIT_SHA=$(curl -sL \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/immich-app/base-images/releases/tags/$BASE_IMAGE_TAG" | \
+            jq -r '.target_commitish')
+
+          echo "Found commit SHA: $COMMIT_SHA"
+
+          # set the output for subsequent steps to use
+          echo "::set-output name=base_commit::${COMMIT_SHA}"
+
+      - name: Checkout base-images repo
+        uses: actions/checkout@v4
+        with:
+          repository: immich-app/base-images
+          ref: ${{ steps.find_commit.outputs.base_commit }}
+          path: ./base-images
+
+      - name: Build Dependencies
+        run: |
+          BUILD_ALL=${{ env.build_all }}
+          REPACK_NEEDED=false
+          cd base-images/server/sources
+          # modify the scripts
+          sed -i "/autoreconf --install/i sed -i '1iAC_CONFIG_AUX_DIR([.])' configure.ac" libraw.sh
+          sed -i "/cmake --install \./c DESTDIR=$HOME\/deps cmake --install . --prefix=\/usr\/local" libjxl.sh
+          sed -i "s,install,install DESTDIR=$HOME\/deps,g" libheif.sh
+          sed -i "/make install/c make install DESTDIR=$HOME\/deps" {libraw.sh,imagemagick.sh}
+          sed -i "/ninja install/i export DESTDIR=$HOME\/deps" libvips.sh
+          # build as needed
+          for json_file in *.json; do
+            package_name=$(basename "$json_file" .json)
+            current_rev=$(jq -r '.revision' "$json_file")
+            previous_rev=$(jq -r '.revision' "$HOME/deps/.json/$json_file" 2>/dev/null || echo "")
+            if [ "$BUILD_ALL" = "true" ] || [ "$current_rev" != "$previous_rev" ]; then
+              echo "Building package: $package_name (current: $current_rev, previous: $previous_rev)"
+              $package_name.sh
+              cp $json_file "$HOME/deps/.json/"
+              REPACK_NEEDED=true
+            else
+              echo "Skipping package: $package_name (revision unchanged)"
+            fi
+          done
+
+          echo "REPACK_NEEDED=$REPACK_NEEDED" >> "$GITHUB_OUTPUT"
+
+          
+      - name: Archive dependencies
+        run: |
+          REPACK_NEEDED="${{ steps.build_packages.outputs.REPACK_NEEDED }}"
+          if [ "$REPACK_NEEDED" = "true" ]; then
+            echo "Archiving dependencies..."
+            tar -czf dependencies.tar.gz -C "$HOME" deps
+          fi
+
+      - name: Upload dependencies artifact
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: dependencies
+          path: dependencies.tar.gz
