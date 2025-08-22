@@ -134,6 +134,7 @@ jobs:
           sed -i "s,install,install DESTDIR=$HOME\/deps,g" libheif.sh
           sed -i "/make install/c make install DESTDIR=$HOME\/deps" {libraw.sh,imagemagick.sh}
           sed -i "/ninja install/i export DESTDIR=$HOME\/deps" libvips.sh
+          sed -i "s,ldconfig,#ldconfig,g" *.sh
           # build as needed
           for json_file in *.json; do
             package_name=$(basename "$json_file" .json)

@@ -52,6 +52,7 @@ jobs:
         run: |
           # Extract compiled dependencies to /usr/local
           sudo tar -xf dependencies.tar.gz -C / --strip-components=1 deps/usr
+          sudo ldconfig /usr/local/lib
 
       - name: Pre-build
         env:
