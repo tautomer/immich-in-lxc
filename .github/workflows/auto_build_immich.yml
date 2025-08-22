@@ -1,4 +1,3 @@
-# Simplified check_version.yml
 name: Check for New Immich Version
 
 on:
@@ -13,57 +12,63 @@ jobs:
       latest_release: ${{ steps.check.outputs.latest_release }}
       is_new_release: ${{ steps.compare.outputs.is_new_release }}
     steps:
-    - name: Get latest Immich release
-      id: check
-      run: |
-        # Get the latest release tag
-        LATEST_TAG=$(curl -s https://api.github.com/repos/immich-app/immich/releases/latest | jq -r '.tag_name')
-        echo "latest_release=$LATEST_TAG" >> $GITHUB_ENV
-        echo "latest_release=$LATEST_TAG" >> $GITHUB_OUTPUT
+      - name: Get latest Immich release
+        id: check
+        run: |
+          # Get the latest release tag
+          LATEST_TAG=$(curl -s https://api.github.com/repos/immich-app/immich/releases/latest | jq -r '.tag_name')
+          echo "latest_release=$LATEST_TAG" >> $GITHUB_ENV
+          echo "latest_release=$LATEST_TAG" >> $GITHUB_OUTPUT
 
-    - name: Compare latest release with stored one
-      id: compare
-      env:
-        STORED_RELEASE_VAR: ${{ vars.LATEST_IMMICH_RELEASE }}
-      run: |
-        # Get the latest release tag from the first step
-        LATEST_TAG=${{ steps.check.outputs.latest_release }}
+      - name: Compare latest release with stored one
+        id: compare
+        env:
+          STORED_RELEASE_VAR: ${{ vars.LATEST_IMMICH_RELEASE }}
+        run: |
+          # Get the latest release tag from the first step
+          LATEST_TAG=${{ steps.check.outputs.latest_release }}
 
-        # Read the previous release tag from the repository variable, fallback to empty if not found
-        PREV_TAG="${{ env.STORED_RELEASE_VAR }}"
+          # Read the previous release tag from the repository variable, fallback to empty if not found
+          PREV_TAG="${{ env.STORED_RELEASE_VAR }}"
 
-        echo "Latest tag: $LATEST_TAG"
-        echo "Previous tag (from variable): $PREV_TAG"
+          echo "Latest tag: $LATEST_TAG"
+          echo "Previous tag (from variable): $PREV_TAG"
 
-        if [ "$LATEST_TAG" != "$PREV_TAG" ]; then
-          echo "is_new_release=true" >> $GITHUB_ENV
-          echo "is_new_release=true" >> $GITHUB_OUTPUT
-          # Notice that a new release is detected and build/release will proceed
-          echo "::notice file=README.md::New release detected: $LATEST_TAG. Build and Release will proceed."
-        else
-          echo "is_new_release=false" >> $GITHUB_ENV
-          echo "is_new_release=false" >> $GITHUB_OUTPUT
-          echo "::notice file=README.md::No new release detected. Skipping build and release."
-        fi
+          if [ "$LATEST_TAG" != "$PREV_TAG" ]; then
+            echo "is_new_release=true" >> $GITHUB_OUTPUT
+            # Notice that a new release is detected and build/release will proceed
+            echo "::notice file=README.md::New release detected: $LATEST_TAG. Build and Release will proceed."
+          else
+            echo "is_new_release=false" >> $GITHUB_OUTPUT
+            echo "::notice file=README.md::No new release detected. Skipping build and release."
+          fi
     
-    - name: Checkout repository
-      if: steps.compare.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch'
-      uses: actions/checkout@v4
-      with:
-        ref: ${{ github.ref_name }}
-      
-    - name: Trigger build workflows
-      if: steps.compare.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch'
-      run: |
-        LATEST_TAG=${{ steps.check.outputs.latest_release }}
-        IS_NEW_RELEASE=${{ steps.compare.outputs.is_new_release }}
-        gh workflow run build_dependencies.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG
-        gh workflow run build_server.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG
-        if [ "${IS_NEW_RELEASE}" == 'true' ]; then
+  Auto-build-immich:
+    needs: Check-immich-release
+    runs-on: ubuntu-latest
+    if: ${{ needs.Check-immich-release.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch' }}
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      LATEST_TAG: ${{ needs.Check-immich-release.outputs.latest_release }}
+      IS_NEW_RELEASE: ${{ needs.Check-immich-release.outputs.is_new_release }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Trigger build_dependencies workflow
+        run: gh workflow run build_dependencies.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG
+
+      - name: Trigger build_server workflow
+        run: gh workflow run build_server.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG
+
+      - name: Trigger build_client workflow
+        if: ${{ env.IS_NEW_RELEASE == 'true' }}
+        run: |
           echo "::notice file=README.md::New release detected, triggering release workflow."
           gh workflow run release_immich.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG -f timestamp=$(date)
-        else
-          echo "::notice file=README.md::Same version already released. Skipping release workflow."
-        fi
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip release workflow if same version
+        if: ${{ env.IS_NEW_RELEASE == 'false' }}
+        run: echo "::notice file=README.md::Same version already released. Skipping release workflow."

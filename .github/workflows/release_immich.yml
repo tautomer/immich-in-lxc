@@ -1,4 +1,4 @@
-name: Release and Update Immich
+name: Release and Update immich
 
 on:
   workflow_dispatch:

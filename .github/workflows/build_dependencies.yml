@@ -14,8 +14,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install --no-install-recommends -yqq \
-            jq \ 
+          sudo apt install --no-install-recommends -yqq jq \ 
             curl \
             git \
             autoconf \
