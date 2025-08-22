@@ -59,17 +59,25 @@ jobs:
 
       - name: Trigger and wait for build_dependencies workflow
         run: |
-          gh workflow run build_dependencies.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG --json databaseId --jq .databaseId > run_id.txt
-              
-          RUN_ID=$(cat run_id.txt)
-          gh run watch $RUN_ID
+          gh workflow run build_dependencies.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG 
+          RUN_ID=$(gh run list --workflow=build_dependencies.yml --branch ${{ github.ref_name }} --limit 1 --json databaseId --jq '.[0].databaseId')
+          if [ -n "$RUN_ID" ]; then
+            gh run watch "$RUN_ID"
+          else
+            echo "Failed to get workflow run ID. Exiting."
+            exit 1
+          fi
           
       - name: Trigger and wait for build_server workflow
         run: |
-          gh workflow run build_server.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG --json databaseId --jq .databaseId > run_id.txt
-        
-          RUN_ID=$(cat run_id.txt)
-          gh run watch $RUN_ID
+          gh workflow run build_server.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG 
+          RUN_ID=$(gh run list --workflow=build_server.yml --branch ${{ github.ref_name }} --limit 1 --json databaseId --jq '.[0].databaseId')
+          if [ -n "$RUN_ID" ]; then
+            gh run watch "$RUN_ID"
+          else
+            echo "Failed to get workflow run ID. Exiting."
+            exit 1
+          fi
         
       - name: Trigger release workflow
         if: ${{ env.IS_NEW_RELEASE == 'true' }}
