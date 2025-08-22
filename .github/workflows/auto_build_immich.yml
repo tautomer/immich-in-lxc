@@ -51,6 +51,8 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       LATEST_TAG: ${{ needs.Check-immich-release.outputs.latest_release }}
       IS_NEW_RELEASE: ${{ needs.Check-immich-release.outputs.is_new_release }}
+      MAX_RETRIES: 6
+      TIMER: 5
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -60,7 +62,21 @@ jobs:
       - name: Trigger and wait for build_dependencies workflow
         run: |
           gh workflow run build_dependencies.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG 
-          RUN_ID=$(gh run list --workflow=build_dependencies.yml --branch ${{ github.ref_name }} --limit 1 --json databaseId --jq '.[0].databaseId')
+          RUN_ID=""
+          RETRY_COUNT=0
+    
+          while [ -z "$RUN_ID" ] && [ "$RETRY_COUNT" -lt "$MAX_RETRIES" ]; do
+            echo "Attempting to get run ID (Attempt $((RETRY_COUNT + 1)))..."
+            RUN_ID=$(gh run list --workflow=build_dependencies.yml --branch ${{ github.ref_name }} --limit 1 --json databaseId --jq '.[0].databaseId')
+
+            if [ -z "$RUN_ID" ]; then
+              echo "Run ID not found yet. Waiting $TIMER seconds..."
+              sleep $TIMER
+            fi
+
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+          done
+
           if [ -n "$RUN_ID" ]; then
             gh run watch "$RUN_ID"
           else
@@ -71,7 +87,21 @@ jobs:
       - name: Trigger and wait for build_server workflow
         run: |
           gh workflow run build_server.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG 
-          RUN_ID=$(gh run list --workflow=build_server.yml --branch ${{ github.ref_name }} --limit 1 --json databaseId --jq '.[0].databaseId')
+          RUN_ID=""
+          RETRY_COUNT=0
+    
+          while [ -z "$RUN_ID" ] && [ "$RETRY_COUNT" -lt "$MAX_RETRIES" ]; do
+            echo "Attempting to get run ID (Attempt $((RETRY_COUNT + 1)))..."
+            RUN_ID=$(gh run list --workflow=build_server.yml --branch ${{ github.ref_name }} --limit 1 --json databaseId --jq '.[0].databaseId')
+
+            if [ -z "$RUN_ID" ]; then
+              echo "Run ID not found yet. Waiting $TIMER seconds..."
+              sleep $TIMER
+            fi
+
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+          done
+
           if [ -n "$RUN_ID" ]; then
             gh run watch "$RUN_ID"
           else

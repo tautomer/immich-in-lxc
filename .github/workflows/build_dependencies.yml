@@ -14,7 +14,6 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          set -x
           packages=(
             jq
             curl
@@ -48,42 +47,11 @@ jobs:
             libio-compress-brotli-perl
             libaom-dev
           )
-              
+
           for pkg in "${packages[@]}"; do
             echo "Installing $pkg..."
             sudo apt install --no-install-recommends -yqq "$pkg"
           done
-          # sudo apt install --no-install-recommends -yqq jq \ 
-          #   curl \
-          #   git \
-          #   autoconf \
-          #   build-essential \
-          #   cmake \
-          #   libbrotli-dev \
-          #   libde265-dev \
-          #   libexif-dev \
-          #   libexpat1-dev \
-          #   libglib2.0-dev \
-          #   libgsf-1-dev \
-          #   liblcms2-2 \
-          #   libspng-dev \
-          #   librsvg2-dev \
-          #   meson \
-          #   ninja-build \
-          #   pkg-config \
-          #   wget \
-          #   zlib1g \
-          #   libltdl-dev \
-          #   cpanminus \
-          #   libtool \
-          #   liblcms2-dev \
-          #   libgif-dev \
-          #   libpango1.0-dev \
-          #   libdav1d-dev \
-          #   libhwy-dev \
-          #   libwebp-dev \
-          #   libio-compress-brotli-perl \
-          #   libaom-dev
 
       - name: Download previous dependencies for latest release
         id: download_from_release
@@ -155,6 +123,7 @@ jobs:
           path: ./base-images
 
       - name: Build Dependencies
+        id: build_packages
         run: |
           BUILD_ALL=${{ env.build_all }}
           REPACK_NEEDED=false
@@ -172,8 +141,9 @@ jobs:
             previous_rev=$(jq -r '.revision' "$HOME/deps/.json/$json_file" 2>/dev/null || echo "")
             if [ "$BUILD_ALL" = "true" ] || [ "$current_rev" != "$previous_rev" ]; then
               echo "Building package: $package_name (current: $current_rev, previous: $previous_rev)"
-              $package_name.sh
-              cp $json_file "$HOME/deps/.json/"
+              chmod u+x $package_name.sh
+              ./$package_name.sh
+              cp "$json_file" "$HOME/deps/.json/"
               REPACK_NEEDED=true
             else
               echo "Skipping package: $package_name (revision unchanged)"
