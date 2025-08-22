@@ -57,13 +57,21 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
 
-      - name: Trigger build_dependencies workflow
-        run: gh workflow run build_dependencies.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG
-
-      - name: Trigger build_server workflow
-        run: gh workflow run build_server.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG
-
-      - name: Trigger build_client workflow
+      - name: Trigger and wait for build_dependencies workflow
+        run: |
+          gh workflow run build_dependencies.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG --json databaseId --jq .databaseId > run_id.txt
+              
+          RUN_ID=$(cat run_id.txt)
+          gh run watch $RUN_ID
+          
+      - name: Trigger and wait for build_server workflow
+        run: |
+          gh workflow run build_server.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG --json databaseId --jq .databaseId > run_id.txt
+        
+          RUN_ID=$(cat run_id.txt)
+          gh run watch $RUN_ID
+        
+      - name: Trigger release workflow
         if: ${{ env.IS_NEW_RELEASE == 'true' }}
         run: |
           echo "::notice file=README.md::New release detected, triggering release workflow."

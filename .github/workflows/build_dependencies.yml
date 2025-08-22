@@ -14,37 +14,76 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install --no-install-recommends -yqq jq \ 
-            curl \
-            git \
-            autoconf \
-            build-essential \
-            cmake \
-            libbrotli-dev \
-            libde265-dev \
-            libexif-dev \
-            libexpat1-dev \
-            libglib2.0-dev \
-            libgsf-1-dev \
-            liblcms2-2 \
-            libspng-dev \
-            librsvg2-dev \
-            meson \
-            ninja-build \
-            pkg-config \
-            wget \
-            zlib1g \
-            libltdl-dev \
-            cpanminus \
-            libtool \
-            liblcms2-dev \
-            libgif-dev \
-            libpango1.0-dev \
-            libdav1d-dev \
-            libhwy-dev \
-            libwebp-dev \
-            libio-compress-brotli-perl \
+          set -x
+          packages=(
+            jq
+            curl
+            git
+            autoconf
+            build-essential
+            cmake
+            libbrotli-dev
+            libde265-dev
+            libexif-dev
+            libexpat1-dev
+            libglib2.0-dev
+            libgsf-1-dev
+            liblcms2-2
+            libspng-dev
+            librsvg2-dev
+            meson
+            ninja-build
+            pkg-config
+            wget
+            zlib1g
+            libltdl-dev
+            cpanminus
+            libtool
+            liblcms2-dev
+            libgif-dev
+            libpango1.0-dev
+            libdav1d-dev
+            libhwy-dev
+            libwebp-dev
+            libio-compress-brotli-perl
             libaom-dev
+          )
+              
+          for pkg in "${packages[@]}"; do
+            echo "Installing $pkg..."
+            sudo apt install --no-install-recommends -yqq "$pkg"
+          done
+          # sudo apt install --no-install-recommends -yqq jq \ 
+          #   curl \
+          #   git \
+          #   autoconf \
+          #   build-essential \
+          #   cmake \
+          #   libbrotli-dev \
+          #   libde265-dev \
+          #   libexif-dev \
+          #   libexpat1-dev \
+          #   libglib2.0-dev \
+          #   libgsf-1-dev \
+          #   liblcms2-2 \
+          #   libspng-dev \
+          #   librsvg2-dev \
+          #   meson \
+          #   ninja-build \
+          #   pkg-config \
+          #   wget \
+          #   zlib1g \
+          #   libltdl-dev \
+          #   cpanminus \
+          #   libtool \
+          #   liblcms2-dev \
+          #   libgif-dev \
+          #   libpango1.0-dev \
+          #   libdav1d-dev \
+          #   libhwy-dev \
+          #   libwebp-dev \
+          #   libio-compress-brotli-perl \
+          #   libaom-dev
 
       - name: Download previous dependencies for latest release
         id: download_from_release
