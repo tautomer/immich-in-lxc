@@ -34,12 +34,6 @@ jobs:
           sudo tar -xf dependencies.tar.gz -C / --strip-components=1 deps/usr
           sudo ldconfig /usr/local/lib
 
-      # this is global install which works for all users
-      - name: Set up Node.js
-        uses: actions/setup-node@v4.3.0
-        with:
-          node-version: '20'
-          
       - name: Create user immich
         run: |
           sudo adduser --shell /bin/bash --disabled-password immich
@@ -111,6 +105,19 @@ jobs:
           # echo "Applying sed to comment out functions: ${FUNCTIONS_TO_DISABLE[*]}"
           # eval "sed ${SED_COMMAND} ${INPUT_SCRIPT} > ${TEMP_SCRIPT}"
           # sudo bash ${TEMP_SCRIPT}
+      
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+          
+      # this is global install which works for all users
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
           
       - name: Build immich server
         id: build
