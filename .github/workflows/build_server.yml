@@ -59,7 +59,8 @@ jobs:
           IMMICH_VERSION: ${{ github.event.inputs.version }}
           UPLOAD_DIR: ${{ vars.UPLOAD_DIR }}
         run: |
-          sudo apt install -yqq build-essential wget
+          sudo apt install -yqq build-essential
+          wget https://raw.githubusercontent.com/immich-app/immich/refs/tags/${{ github.event.inputs.version }}/pnpm-lock.yaml
           export INSTALL_DIR=/home/immich
           echo "INSTALL_DIR=/home/immich" >> $GITHUB_ENV
           sudo mkdir -p $UPLOAD_DIR
