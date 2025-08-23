@@ -59,7 +59,7 @@ jobs:
           # We will try to restore the dependencies built from the latest (last) release
           # Then check if there is any update in the new release
           # The file is expected to be named dependencies.tar.gz
-          # containing dummy deps/usr folder with all the dependencies and a deps/.json folder saving the versions of the dependencies
+          # containing dummy deps/usr folder with all the dependencies and a deps/json folder saving the versions of the dependencies
           DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/latest/download/dependencies.tar.gz"
           # The `|| true` prevents the step from failing if the download URL returns a 404,
           # allowing us to handle the error gracefully.
@@ -78,8 +78,8 @@ jobs:
         id: prepare_build
         run: |
           # Create the dependency folders
-          mkdir -p "$HOME/deps/usr"
-          mkdir -p "$HOME/deps/.json"
+          mkdir -p "$HOME/deps/stow"
+          mkdir -p "$HOME/deps/json"
 
           # Unpack old artifact if it exists
           if [ "$PREVIOUS_ARTIFACT_FOUND" = "true" ]; then
@@ -134,7 +134,7 @@ jobs:
               --slurpfile sources /tmp/sources.json \
               --slurpfile packages /tmp/packages.json \
               '{sources: $sources[0], packages: $packages[0]}' \
-              > $HOME/deps/.json/build-lock.json
+              > $HOME/deps/json/build-lock.json
 
       - name: Modify build scripts
         run: |
@@ -145,17 +145,17 @@ jobs:
           # no need to run ldconfig in the GitHub runner
           sed -i "s,ldconfig,#ldconfig,g" *.sh
           # install to a custom location so we can repack it later and install with stow
-          # libjxl to $HOME/deps/libjxl
-          sed -i "/cmake --install \./c DESTDIR=$HOME\/deps\/libjxl cmake --install . --prefix=\/usr\/local" libjxl.sh
-          # libheif to $HOME/deps/libheif
-          sed -i "s,install,install DESTDIR=$HOME\/deps\/libheif,g" libheif.sh
-          # libraw to $HOME/deps/libraw
-          sed -i "/make install/c make install DESTDIR=$HOME\/deps\/libraw" libraw.sh
-          # imagamagick to $HOME/deps/imagemagick 
+          # libjxl to $HOME/deps/stow/libjxl
+          sed -i "/cmake --install \./c DESTDIR=$HOME\/deps\/stow\/libjxl cmake --install . --prefix=\/usr\/local" libjxl.sh
+          # libheif to $HOME/deps/stow/libheif
+          sed -i "s,install,install DESTDIR=$HOME\/deps\/stow\/libheif,g" libheif.sh
+          # libraw to $HOME/deps/stow/libraw
+          sed -i "/make install/c make install DESTDIR=$HOME\/deps\/stow\/libraw" libraw.sh
+          # imagemagick to $HOME/deps/stow/imagemagick
           # version number is omitted here, but $HOME/deps/imagemagick/usr/local/lib/imagemagick-x.y.z is kept
-          sed -i "/make install/c make install DESTDIR=$HOME\/deps\/imagemagick" imagemagick.sh
-          # libvips to $HOME/deps/libvips
-          sed -i "/ninja install/i export DESTDIR=$HOME\/deps\/libvips" libvips.sh
+          sed -i "/make install/c make install DESTDIR=$HOME\/deps\/stow\/imagemagick" imagemagick.sh
+          # libvips to $HOME/deps/stow/libvips
+          sed -i "/ninja install/i export DESTDIR=$HOME\/deps\/stow\/libvips" libvips.sh
 
       - name: Build Dependencies
         id: build_packages
@@ -168,12 +168,12 @@ jobs:
           for json_file in *.json; do
             package_name=$(basename "$json_file" .json)
             current_rev=$(jq -r '.revision' "$json_file")
-            previous_rev=$(jq -r '.revision' "$HOME/deps/.json/$json_file" 2>/dev/null || echo "")
+            previous_rev=$(jq -r '.revision' "$HOME/deps/json/$json_file" 2>/dev/null || echo "")
             if [ "$BUILD_ALL" = "true" ] || [ "$current_rev" != "$previous_rev" ]; then
               echo "Building package: $package_name (current: $current_rev, previous: $previous_rev)"
               chmod u+x $package_name.sh
               ./$package_name.sh
-              cp "$json_file" "$HOME/deps/.json/"
+              cp "$json_file" "$HOME/deps/json/"
               REPACK_NEEDED=true
             else
               echo "Skipping package: $package_name (revision unchanged)"

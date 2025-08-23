@@ -68,21 +68,24 @@ jobs:
               - Extract `tar -xf dependencies.tar.gz`.
               - Create the shared /opt/deps directory if it doesn't already exist and move your extracted files into it. This location ensures the libraries are accessible to all users.
                 ```shell
-                mkdir -p /opt/deps
-                rm -rf /opt/deps/usr
-                mv $HOME/deps /opt/deps
+                mkdir -p /opt/stow
+                mv $HOME/deps /opt/stow
                 ```
               - Install with Stow
                 ```shell
                 apt install stow
-                cd /opt/deps
+                cd /opt/stow
                 for lib in $(ls -d */); do
                   stow -v $lib
                 done
                 ```
               - Copy build lock file
                 ```shell
-                cp ${HOME}/.json/build-lock.json /opt/deps/
+                cp ${HOME}/deps/json/build-lock.json /opt/stow/
+                ```
+              - Remove the tarball and extracted folder with
+                ```shell
+                rm -rf ~/deps ~/dependencies.tar.gz
                 ```
             - Switch to the immich user: `su - immich`.
             - Download `server.tar.gz` into the home folder.

@@ -31,14 +31,14 @@ jobs:
       - name: Extract compiled dependencies
         run: |
           # Extract compiled dependencies to $HOME
-          # $HOME/deps contains the packages grouped from GNU stow
-          # $HOME/.json contains the version of the libraries
-          # $HOME/.json/build-lock.json needs to be copied to the immich-in-lxc folder
+          # $HOME/deps/stow contains the packages grouped from GNU stow
+          # $HOME/deps/json contains the version of the libraries
+          # $HOME/deps/json/build-lock.json needs to be copied to the immich-in-lxc folder
           tar -xf dependencies.tar.gz
-          cp ${HOME}/.json/build-lock.json ${{ github.workspace }}
+          cp ${HOME}/deps/json/build-lock.json ${{ github.workspace }}
           mkdir -p /opt
-          mv $HOME/deps /opt/deps
-          cd /opt/deps
+          mv $HOME/deps/stow /opt/stow
+          cd /opt/stow
           for lib in $(ls -d */); do
             sudo stow -v $lib
           done
