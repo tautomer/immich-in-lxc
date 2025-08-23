@@ -109,12 +109,13 @@ jobs:
             echo "Failed to get workflow run ID. Exiting."
             exit 1
           fi
+          echo "SVR_RUN_ID=$RUN_ID" >> $GITHUB_ENV
         
       - name: Trigger release workflow
         if: ${{ env.IS_NEW_RELEASE == 'true' }}
         run: |
           echo "::notice file=README.md::New release detected, triggering release workflow."
-          gh workflow run release_immich.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG -f timestamp=$(date)
+          gh workflow run release_immich.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG -f timestamp=$(date) -f deps_run_id=$DEPS_RUN_ID -f svr_run_id=$SVR_RUN_ID
 
       - name: Skip release workflow if same version
         if: ${{ env.IS_NEW_RELEASE == 'false' }}
