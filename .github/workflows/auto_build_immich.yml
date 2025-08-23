@@ -59,20 +59,26 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
 
-      - name: Trigger build_dependencies workflow
+      - name: Trigger and watch build_dependencies workflow
         run: |
-          gh workflow run build_dependencies.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG 
+          EVENT_ID=$(date +%s%N)
+          echo "Generated event ID: $EVENT_ID"
+
+          gh workflow run build_dependencies.yml --ref ${{ github.ref_name }} -f event_id=$EVENT_ID
+
           RUN_ID=""
           RETRY_COUNT=0
-    
-          while [ -z "$RUN_ID" ] && [ "$RETRY_COUNT" -lt "$MAX_RETRIES" ]; do
-            echo "Attempting to get run ID (Attempt $((RETRY_COUNT + 1)))..."
-            RUN_ID=$(gh api -H "Accept: application/vnd.github.v3+json" "/repos/${{ github.repository }}/actions/workflows/build_dependencies.yml/runs?branch=${{ github.ref_name }}&per_page=1" | jq '.workflow_runs[0].id')
 
-            if [ "$RUN_ID" = "null" ]; then
-              echo "Run ID not found yet. Waiting $TIMER seconds..."
-              sleep $TIMER
-              RUN_ID=""
+          while [ -z "$RUN_ID" ] && [ "$RETRY_COUNT" -lt "$MAX_RETRIES" ]; do
+            echo "Attempting to get run ID for event $EVENT_ID (Attempt $((RETRY_COUNT + 1)))..."
+            
+            RUN_INFO=$(gh api -H "Accept: application/vnd.github.v3+json" "/repos/${{ github.repository }}/actions/workflows/build_dependencies.yml/runs?event=workflow_dispatch&per_page=100")
+
+            RUN_ID=$(echo "$RUN_INFO" | jq --arg event_id "$EVENT_ID" '.workflow_runs[] | select(.triggering_actor.login == "github-actions[bot]" and .head_branch == "${{ github.ref_name }}" and .id | tostring == $event_id) | .id')
+
+            if [ -z "$RUN_ID" ]; then
+              echo "Run not found yet. Waiting $TIMER seconds..."
+              sleep "$TIMER"
             fi
 
             RETRY_COUNT=$((RETRY_COUNT + 1))
@@ -81,25 +87,32 @@ jobs:
           if [ -n "$RUN_ID" ]; then
             gh run watch "$RUN_ID"
           else
-            echo "Failed to get workflow run ID. Exiting."
+            echo "Failed to get workflow run ID after multiple retries. Exiting."
             exit 1
           fi
+
           echo "DEPS_RUN_ID=$RUN_ID" >> $GITHUB_ENV
 
-      - name: Trigger build_server workflow
+      - name: Trigger and watch build_server workflow
         run: |
-          gh workflow run build_server.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG -f deps_run_id=$DEPS_RUN_ID
+          EVENT_ID=$(date +%s%N)
+          echo "Generated event ID: $EVENT_ID"
+
+          gh workflow run build_server.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG -f deps_run_id=$DEPS_RUN_ID -f event_id=$EVENT_ID
+
           RUN_ID=""
           RETRY_COUNT=0
-    
-          while [ -z "$RUN_ID" ] && [ "$RETRY_COUNT" -lt "$MAX_RETRIES" ]; do
-            echo "Attempting to get run ID (Attempt $((RETRY_COUNT + 1)))..."
-            RUN_ID=$(gh api -H "Accept: application/vnd.github.v3+json" "/repos/${{ github.repository }}/actions/workflows/build_server.yml/runs?branch=${{ github.ref_name }}&per_page=1" | jq '.workflow_runs[0].id')
 
-            if [ "$RUN_ID" = "null" ]; then
-              echo "Run ID not found yet. Waiting $TIMER seconds..."
-              sleep $TIMER
-              RUN_ID=""
+          while [ -z "$RUN_ID" ] && [ "$RETRY_COUNT" -lt "$MAX_RETRIES" ]; do
+            echo "Attempting to get run ID for event $EVENT_ID (Attempt $((RETRY_COUNT + 1)))..."
+
+            RUN_INFO=$(gh api -H "Accept: application/vnd.github.v3+json" "/repos/${{ github.repository }}/actions/workflows/build_server.yml/runs?event=workflow_dispatch&per_page=100")
+
+            RUN_ID=$(echo "$RUN_INFO" | jq --arg event_id "$EVENT_ID" '.workflow_runs[] | select(.triggering_actor.login == "github-actions[bot]" and .head_branch == "${{ github.ref_name }}" and .id | tostring == $event_id) | .id')
+
+            if [ -z "$RUN_ID" ]; then
+              echo "Run not found yet. Waiting $TIMER seconds..."
+              sleep "$TIMER"
             fi
 
             RETRY_COUNT=$((RETRY_COUNT + 1))
@@ -108,9 +121,10 @@ jobs:
           if [ -n "$RUN_ID" ]; then
             gh run watch "$RUN_ID"
           else
-            echo "Failed to get workflow run ID. Exiting."
+            echo "Failed to get workflow run ID after multiple retries. Exiting."
             exit 1
           fi
+
           echo "SVR_RUN_ID=$RUN_ID" >> $GITHUB_ENV
         
       - name: Trigger release workflow

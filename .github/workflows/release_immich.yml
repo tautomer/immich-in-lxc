@@ -25,6 +25,8 @@ jobs:
       - name: Download dependencies artifact
         uses: actions/download-artifact@v4
         with:
+          repository: ${{ github.repository }}
+          github-token: ${{ secrets.ACTIONS_PAT }}
           run-id: ${{ github.event.inputs.deps_run_id }}
           name: dependencies
           path: dependencies-release
@@ -32,6 +34,8 @@ jobs:
       - name: Download server artifact
         uses: actions/download-artifact@v4
         with:
+          repository: ${{ github.repository }}
+          github-token: ${{ secrets.ACTIONS_PAT }}
           run-id: ${{ github.event.inputs.svr_run_id }}
           name: immich-app-${{ github.event.inputs.version }}
           path: app-release

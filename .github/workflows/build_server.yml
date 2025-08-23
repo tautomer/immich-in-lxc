@@ -23,6 +23,8 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: dependencies
+          repository: ${{ github.repository }}
+          github-token: ${{ secrets.ACTIONS_PAT }}
           run-id: ${{ github.event.inputs.deps_run_id }}
           path: .
 
