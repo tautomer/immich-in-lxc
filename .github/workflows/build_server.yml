@@ -34,11 +34,11 @@ jobs:
           # $HOME/deps/stow contains the packages grouped from GNU stow
           # $HOME/deps/json contains the version of the libraries
           # $HOME/deps/json/build-lock.json needs to be copied to the immich-in-lxc folder
-          cd ${HOME}
-          tar -xf dependencies.tar.gz
+          tar -xf dependencies.tar.gz -C $HOME
           cp ${HOME}/deps/json/build-lock.json ${{ github.workspace }}
           mkdir -p /opt
           mv $HOME/deps/stow /opt/stow
+          rm -f dependencies.tar.gz
           sudo apt update
           sudo apt install -y stow
           cd /opt/stow
