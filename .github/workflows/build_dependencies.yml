@@ -113,13 +113,13 @@ jobs:
           echo "Found commit SHA: $COMMIT_SHA"
 
           # set the output for subsequent steps to use
-          echo "::set-output name=base_commit::${COMMIT_SHA}"
+          echo "base_commit=${COMMIT_SHA}" >> "$GITHUB_ENV"
 
       - name: Checkout base-images repo
         uses: actions/checkout@v4
         with:
           repository: immich-app/base-images
-          ref: ${{ steps.find_commit.outputs.base_commit }}
+          ref: ${{ env.base_commit }}
           path: ./base-images
 
       - name: Build Dependencies
