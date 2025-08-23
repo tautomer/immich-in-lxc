@@ -81,6 +81,9 @@ jobs:
           PROXY_NPM_DIST=
           PROXY_POETRY=
           EOF
+          # temporary workaround for build-lock.json
+          # should handle this with build_dependencies in the future
+          git clone https://github.com/immich-app/base-images.git ${{ github.workspace }}/base-images
           sudo cp -r ${{ github.workspace }} /home/immich
           sudo chown -R immich:immich /home/immich/immich-in-lxc
           cd /home/immich/immich-in-lxc
