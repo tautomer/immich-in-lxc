@@ -30,9 +30,18 @@ jobs:
 
       - name: Extract compiled dependencies
         run: |
-          # Extract compiled dependencies to /usr/local
-          sudo tar -xf dependencies.tar.gz -C / --strip-components=1 deps/usr
-          sudo ldconfig /usr/local/lib
+          # Extract compiled dependencies to $HOME
+          # $HOME/deps contains the packages grouped from GNU stow
+          # $HOME/.json contains the version of the libraries
+          # $HOME/.json/build-lock.json needs to be copied to the immich-in-lxc folder
+          tar -xf dependencies.tar.gz
+          cp ${HOME}/.json/build-lock.json ${{ github.workspace }}
+          mkdir -p /opt
+          mv $HOME/deps /opt/deps
+          cd /opt/deps
+          for lib in $(ls -d */); do
+            sudo stow -v $lib
+          done
 
       - name: Create user immich
         run: |
@@ -59,15 +68,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+      
+      - name: Install build tools
+        run: |
+          sudo apt install -yqq build-essential
+          npm install -g pnpm@10
           
       - name: Pre-build
         env:
           IMMICH_VERSION: ${{ github.event.inputs.version }}
           UPLOAD_DIR: ${{ vars.UPLOAD_DIR }}
         run: |
-          sudo apt install -yqq build-essential
-          # wget https://raw.githubusercontent.com/immich-app/immich/refs/tags/${{ github.event.inputs.version }}/pnpm-lock.yaml
-          npm install -g pnpm@10
           export INSTALL_DIR=/home/immich
           echo "INSTALL_DIR=/home/immich" >> $GITHUB_ENV
           sudo mkdir -p $UPLOAD_DIR
@@ -81,41 +92,9 @@ jobs:
           PROXY_NPM_DIST=
           PROXY_POETRY=
           EOF
-          # temporary workaround for build-lock.json
-          # should handle this with build_dependencies in the future
-          git clone https://github.com/immich-app/base-images.git ${{ github.workspace }}/base-images
           sudo cp -r ${{ github.workspace }} /home/immich
           sudo chown -R immich:immich /home/immich/immich-in-lxc
           cd /home/immich/immich-in-lxc
-          # head -n -2 dep-ubuntu.sh > /tmp/dep-ubuntu.sh
-          # sudo bash /tmp/dep-ubuntu.sh
-          # FUNCTIONS_TO_DISABLE=(
-          #     "install_postgresql"
-          #     "build_libjxl"
-          #     "build_libheif"
-          #     "build_libraw"
-          #     "build_libvips"
-          #     "build_image_magick"
-          #     "install_ffmpeg"
-          #     "install_runtime_component"
-          #     "git_clone"  
-          #     "add_runtime_dependency"
-          # )
-
-          # INPUT_SCRIPT="pre-install.sh"
-          # TEMP_SCRIPT="/tmp/pre-install.sh"
-
-          # # Build the sed command dynamically
-          # SED_COMMAND=""
-          # for func_name in "${FUNCTIONS_TO_DISABLE[@]}"; do
-          #     # This pattern matches the function name, followed by optional whitespace, and then the end of the line OR a comment.
-          #     # It specifically avoids lines that contain "() {"
-          #     SED_COMMAND+="-e '/^${func_name}[[:space:]]*\($\|#\)/s/^/# /' "
-          # done
-
-          # echo "Applying sed to comment out functions: ${FUNCTIONS_TO_DISABLE[*]}"
-          # eval "sed ${SED_COMMAND} ${INPUT_SCRIPT} > ${TEMP_SCRIPT}"
-          # sudo bash ${TEMP_SCRIPT}
       
       - name: Build immich server
         id: build
@@ -129,6 +108,8 @@ jobs:
               export NVM_DIR=$HOME/.nvm;
               cd /home/immich/immich-in-lxc;
               sed -i "/poetry install --no-root --extras openvino/i\ \ \ \ \ \ \ \ poetry add '\''numpy<2'\''\n\ \ \ \ \ \ \ \ poetry update --lock" install.sh;
+              sed -i "s/# install_sharp_and_cli/install_sharp_and_cli_pnpm/g" install.sh;
+              sed -i "/^generate_build_lock[[:space:]]*\$/c\cp \$SCRIPT_DIR/build-lock.json \$INSTALL_DIR_app" install.sh;
               ./install.sh;
               ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python;
               ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3;

@@ -122,19 +122,48 @@ jobs:
           ref: ${{ env.base_commit }}
           path: ./base-images
 
+      - name: Create build-lock.json
+        run: |
+          mkdir -p $HOME/deps/.json
+          cd base-images/server/
+
+          # From base-images/server/Dockerfile line 110
+          jq -s '.' packages/*.json > /tmp/packages.json
+          jq -s '.' sources/*.json > /tmp/sources.json
+          jq -n \
+              --slurpfile sources /tmp/sources.json \
+              --slurpfile packages /tmp/packages.json \
+              '{sources: $sources[0], packages: $packages[0]}' \
+              > $HOME/deps/.json/build-lock.json
+
+      - name: Modify build scripts
+        run: |
+          cd base-images/server/sources
+          # modify the scripts
+          # autoreconf behaves differently in GitHub runner
+          sed -i "/autoreconf --install/i sed -i '1iAC_CONFIG_AUX_DIR([.])' configure.ac" libraw.sh
+          # no need to run ldconfig in the GitHub runner
+          sed -i "s,ldconfig,#ldconfig,g" *.sh
+          # install to a custom location so we can repack it later and install with stow
+          # libjxl to $HOME/deps/libjxl
+          sed -i "/cmake --install \./c DESTDIR=$HOME\/deps\/libjxl cmake --install . --prefix=\/usr\/local" libjxl.sh
+          # libheif to $HOME/deps/libheif
+          sed -i "s,install,install DESTDIR=$HOME\/deps\/libheif,g" libheif.sh
+          # libraw to $HOME/deps/libraw
+          sed -i "/make install/c make install DESTDIR=$HOME\/deps\/libraw" libraw.sh
+          # imagamagick to $HOME/deps/imagemagick 
+          # version number is omitted here, but $HOME/deps/imagemagick/usr/local/lib/imagemagick-x.y.z is kept
+          sed -i "/make install/c make install DESTDIR=$HOME\/deps\/imagemagick" imagemagick.sh
+          # libvips to $HOME/deps/libvips
+          sed -i "/ninja install/i export DESTDIR=$HOME\/deps\/libvips" libvips.sh
+
       - name: Build Dependencies
         id: build_packages
         run: |
           BUILD_ALL=${{ env.build_all }}
           REPACK_NEEDED=false
+
           cd base-images/server/sources
-          # modify the scripts
-          sed -i "/autoreconf --install/i sed -i '1iAC_CONFIG_AUX_DIR([.])' configure.ac" libraw.sh
-          sed -i "/cmake --install \./c DESTDIR=$HOME\/deps cmake --install . --prefix=\/usr\/local" libjxl.sh
-          sed -i "s,install,install DESTDIR=$HOME\/deps,g" libheif.sh
-          sed -i "/make install/c make install DESTDIR=$HOME\/deps" {libraw.sh,imagemagick.sh}
-          sed -i "/ninja install/i export DESTDIR=$HOME\/deps" libvips.sh
-          sed -i "s,ldconfig,#ldconfig,g" *.sh
           # build as needed
           for json_file in *.json; do
             package_name=$(basename "$json_file" .json)

@@ -62,9 +62,30 @@ jobs:
               apt install python3.11 python3.11-venv python3.11-dev
               ```
             - Stop the `immich-ml` and `immich-web` services: `systemctl stop immich-ml immich-web`.
-            - Download `dependencies.tar.gz` and `server.tar.gz` into the home folder of your LXC.
-            - Extract dependencies first with root: `tar -xf dependencies.tar.gz -C / --strip-components=1 deps/usr`. This will update the dependencies in `/usr/local`.
+            - Download `dependencies.tar.gz` into the home folder of your LXC's root user.
+            - To update the dependency libraries
+              - If you have installed dependencies with `pre-install.sh`, you must first uninstall them. Navigate to each library's source folder (e.g., `/root/immich-in-lxc/image-source/libheif`) and run the uninstall command.
+              - Extract `tar -xf dependencies.tar.gz`.
+              - Create the shared /opt/deps directory if it doesn't already exist and move your extracted files into it. This location ensures the libraries are accessible to all users.
+                ```shell
+                mkdir -p /opt/deps
+                rm -rf /opt/deps/usr
+                mv $HOME/deps /opt/deps
+                ```
+              - Install with Stow
+                ```shell
+                apt install stow
+                cd /opt/deps
+                for lib in $(ls -d */); do
+                  stow -v $lib
+                done
+                ```
+              - Copy build lock file
+                ```shell
+                cp ${HOME}/.json/build-lock.json /opt/deps/
+                ```
             - Switch to the immich user: `su - immich`.
+            - Download `server.tar.gz` into the home folder.
             - Remove `/home/immich/app` and `/home/immich/geodata` folders. For safety, you can rename them first: `mv /home/immich/app /home/immich/app.old` and `mv /home/immich/geodata /home/immich/geodata.old`.
             - Extract the server tarball: `tar -xf server.tar.gz`.
             - Ensure that the `app/upload` directory is linked correctly: `ln -sf /your/upload/path /home/immich/app/upload`.
