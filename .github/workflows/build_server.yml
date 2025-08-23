@@ -54,13 +54,20 @@ jobs:
           sudo apt update
           sudo apt install -y python3.11 python3.11-venv python3.11-dev
 
+      # this is global install which works for all users
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
       - name: Pre-build
         env:
           IMMICH_VERSION: ${{ github.event.inputs.version }}
           UPLOAD_DIR: ${{ vars.UPLOAD_DIR }}
         run: |
           sudo apt install -yqq build-essential
-          wget https://raw.githubusercontent.com/immich-app/immich/refs/tags/${{ github.event.inputs.version }}/pnpm-lock.yaml
+          # wget https://raw.githubusercontent.com/immich-app/immich/refs/tags/${{ github.event.inputs.version }}/pnpm-lock.yaml
+          npm install -g pnpm@10
           export INSTALL_DIR=/home/immich
           echo "INSTALL_DIR=/home/immich" >> $GITHUB_ENV
           sudo mkdir -p $UPLOAD_DIR
@@ -107,25 +114,13 @@ jobs:
           # eval "sed ${SED_COMMAND} ${INPUT_SCRIPT} > ${TEMP_SCRIPT}"
           # sudo bash ${TEMP_SCRIPT}
       
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-          run_install: false
-          
-      # this is global install which works for all users
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-          
       - name: Build immich server
         id: build
         run: |
             # overwrite the default Python version
             sudo ln -sf /usr/bin/python3.11 /usr/bin/python3
             sudo -iu immich bash -c '
+              export PATH=$PATH;
               export XDG_CONFIG_HOME=$HOME/.config;
               export POETRY_CONFIG_DIR=$HOME/.config/pypoetry;
               export NVM_DIR=$HOME/.nvm;
