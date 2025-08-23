@@ -124,7 +124,6 @@ jobs:
 
       - name: Create build-lock.json
         run: |
-          mkdir -p $HOME/deps/.json
           cd base-images/server/
 
           # From base-images/server/Dockerfile line 110

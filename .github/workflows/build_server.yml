@@ -38,6 +38,8 @@ jobs:
           cp ${HOME}/deps/json/build-lock.json ${{ github.workspace }}
           mkdir -p /opt
           mv $HOME/deps/stow /opt/stow
+          sudo apt update
+          sudo apt install -y stow
           cd /opt/stow
           for lib in $(ls -d */); do
             sudo stow -v $lib
