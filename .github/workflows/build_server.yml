@@ -34,17 +34,15 @@ jobs:
           # $HOME/deps/stow contains the packages grouped from GNU stow
           # $HOME/deps/json contains the version of the libraries
           # $HOME/deps/json/build-lock.json needs to be copied to the immich-in-lxc folder
-          tar -xf dependencies.tar.gz -C $HOME
-          cp ${HOME}/deps/json/build-lock.json .
-          mkdir -p /opt
-          mv $HOME/deps/stow /opt/stow
+          tar -xf dependencies.tar.gz 
+          mv deps/json/build-lock.json .
           rm -f dependencies.tar.gz
-          sudo apt update
-          sudo apt install -y stow
-          cd /opt/stow
-          for lib in $(ls -d */); do
-            sudo stow -v $lib
+          for lib in $(ls -d deps/stow/*/); do
+              echo "Merging $lib..."
+              sudo rsync -a "$lib" /
           done
+          sudo ldconfig
+          rm -rf deps
 
       - name: Create user immich
         run: |
@@ -120,6 +118,7 @@ jobs:
               export POETRY_CONFIG_DIR=$HOME/.config/pypoetry;
               export NVM_DIR=$HOME/.nvm;
               cd /home/immich/immich-in-lxc;
+              sed -i "s|^generate_build_lock[[:space:]]*\$|cp \$SCRIPT_DIR/build-lock.json \$INSTALL_DIR_app|" install.sh;
               ./install.sh;
               ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python;
               ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3;

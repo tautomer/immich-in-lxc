@@ -76,7 +76,7 @@ jobs:
                 apt install stow
                 cd /opt/stow
                 for lib in $(ls -d */); do
-                  stow -v $lib
+                  stow -v -t /usr/local $lib
                 done
                 ```
               - Copy build lock file

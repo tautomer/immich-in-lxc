@@ -86,6 +86,11 @@ jobs:
             echo "Unpacking previous artifact..."
             tar -xzf dependencies.tar.gz -C "$HOME"
             echo "build_all=false" >> $GITHUB_ENV
+            for lib in $(ls -d ${HOME}/deps/stow/*/); do
+              echo "Merging $lib..."
+              sudo rsync -a "$lib" /
+            done
+            sudo ldconfig
           else
             echo "No previous artifact found. All packages will be built."
             echo "build_all=true" >> $GITHUB_ENV
@@ -141,37 +146,39 @@ jobs:
           # modify the scripts
           # autoreconf behaves differently in GitHub runner
           sed -i "/autoreconf --install/i sed -i '1iAC_CONFIG_AUX_DIR([.])' configure.ac" libraw.sh
-          # no need to run ldconfig in the GitHub runner
-          sed -i "s,ldconfig,#ldconfig,g" *.sh
           # install to a custom location so we can repack it later and install with stow
           # libjxl to $HOME/deps/stow/libjxl
-          sed -i "/cmake --install \./c DESTDIR=$HOME\/deps\/stow\/libjxl cmake --install . --prefix=\/usr\/local" libjxl.sh
+          sed -i 's#^ *cmake --install \.#&\nDESTDIR='"$HOME"'/deps/stow/libjxl & --prefix=/usr/local#' libjxl.sh
           # libheif to $HOME/deps/stow/libheif
-          sed -i "s,install,install DESTDIR=$HOME\/deps\/stow\/libheif,g" libheif.sh
+          sed -i 's#^ *make -j"$(nproc)" install#&\n& DESTDIR='"$HOME"'/deps/stow/libheif#' libheif.sh
           # libraw to $HOME/deps/stow/libraw
-          sed -i "/make install/c make install DESTDIR=$HOME\/deps\/stow\/libraw" libraw.sh
+          sed -i 's#^ *make install#&\n& DESTDIR='"$HOME"'/deps/stow/libraw#' libraw.sh
           # imagemagick to $HOME/deps/stow/imagemagick
           # version number is omitted here, but $HOME/deps/imagemagick/usr/local/lib/imagemagick-x.y.z is kept
-          sed -i "/make install/c make install DESTDIR=$HOME\/deps\/stow\/imagemagick" imagemagick.sh
+          sed -i 's#^ *make install#&\n& DESTDIR='"$HOME"'/deps/stow/imagemagick#' imagemagick.sh
           # libvips to $HOME/deps/stow/libvips
-          sed -i "/ninja install/i export DESTDIR=$HOME\/deps\/stow\/libvips" libvips.sh
+          sed -i 's#^ *ninja install#&\nexport DESTDIR='"$HOME"'/deps/stow/libvips\n&#g' libvips.sh
 
       - name: Build Dependencies
         id: build_packages
         run: |
           BUILD_ALL=${{ env.build_all }}
           REPACK_NEEDED=false
+          LIBRARIES=("libjxl" "libheif" "libraw" "imagemagick" "libvips")
 
           cd base-images/server/sources
           # build as needed
-          for json_file in *.json; do
-            package_name=$(basename "$json_file" .json)
+          for package_name in "${LIBRARIES[@]}"; do
+            json_file="${package_name}.json"
+            sh_file="${package_name}.sh"
+            
             current_rev=$(jq -r '.revision' "$json_file")
             previous_rev=$(jq -r '.revision' "$HOME/deps/json/$json_file" 2>/dev/null || echo "")
+            
             if [ "$BUILD_ALL" = "true" ] || [ "$current_rev" != "$previous_rev" ]; then
               echo "Building package: $package_name (current: $current_rev, previous: $previous_rev)"
-              chmod u+x $package_name.sh
-              ./$package_name.sh
+              chmod u+x "$sh_file"
+              sudo ./"$sh_file"
               cp "$json_file" "$HOME/deps/json/"
               REPACK_NEEDED=true
             else
@@ -180,7 +187,6 @@ jobs:
           done
 
           echo "REPACK_NEEDED=$REPACK_NEEDED" >> "$GITHUB_OUTPUT"
-
           
       - name: Archive dependencies
         run: |
