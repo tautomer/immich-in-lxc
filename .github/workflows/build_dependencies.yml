@@ -6,6 +6,10 @@ on:
       version:
         description: 'Immich release tag'
         required: true
+      rebuild:
+        description: 'Force rebuild the dependencies'
+        required: false
+        default: 'false'
 
 jobs:
   Build-dependencies:
@@ -56,10 +60,16 @@ jobs:
       - name: Download previous dependencies for latest release
         id: download_from_release
         run: |
+
           # We will try to restore the dependencies built from the latest (last) release
           # Then check if there is any update in the new release
           # The file is expected to be named dependencies.tar.gz
           # containing dummy deps/usr folder with all the dependencies and a deps/json folder saving the versions of the dependencies
+          if [ "${{ github.event.inputs.rebuild }}" == "true" ]; then
+            echo "Rebuild flag is set. Skipping download of previous dependencies. Directly proceed to build."
+            echo "PREVIOUS_ARTIFACT_FOUND=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
           DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/latest/download/dependencies.tar.gz"
           # The `|| true` prevents the step from failing if the download URL returns a 404,
           # allowing us to handle the error gracefully.
@@ -177,11 +187,16 @@ jobs:
             
             if [ "$BUILD_ALL" = "true" ] || [ "$current_rev" != "$previous_rev" ]; then
               echo "Building package: $package_name (current: $current_rev, previous: $previous_rev)"
+              if [ "$package_name" = "libjxl" ]; then
+                args="--JPEGLI_LIBJPEG_LIBRARY_SOVERSION 8 --JPEGLI_LIBJPEG_LIBRARY_VERSION 8.2.2"
+              else
+                args=""
+              fi
               STOW_PKG_DIR="${HOME}/deps/stow/$package_name"
               rm -rf "$STOW_PKG_DIR"
               mkdir -p "$STOW_PKG_DIR"
               chmod u+x "$sh_file"
-              sudo ./"$sh_file"
+              sudo ./"$sh_file" $args
               NESTED_DIR="$STOW_PKG_DIR/usr/local"
               if [ -d "$NESTED_DIR" ]; then  
                 shopt -s dotglob
