@@ -39,7 +39,7 @@ jobs:
           rm -f dependencies.tar.gz
           for lib in $(ls -d deps/stow/*/); do
               echo "Merging $lib..."
-              sudo rsync -a "$lib" /
+              sudo rsync -a "$lib" /usr/local/
           done
           sudo ldconfig
           rm -rf deps

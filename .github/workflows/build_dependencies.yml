@@ -88,7 +88,7 @@ jobs:
             echo "build_all=false" >> $GITHUB_ENV
             for lib in $(ls -d ${HOME}/deps/stow/*/); do
               echo "Merging $lib..."
-              sudo rsync -a "$lib" /
+              sudo rsync -a "$lib" /usr/local/
             done
             sudo ldconfig
           else
@@ -177,8 +177,18 @@ jobs:
             
             if [ "$BUILD_ALL" = "true" ] || [ "$current_rev" != "$previous_rev" ]; then
               echo "Building package: $package_name (current: $current_rev, previous: $previous_rev)"
+              STOW_PKG_DIR="${HOME}/deps/stow/$package_name"
+              rm -rf "$STOW_PKG_DIR"
+              mkdir -p "$STOW_PKG_DIR"
               chmod u+x "$sh_file"
               sudo ./"$sh_file"
+              NESTED_DIR="$STOW_PKG_DIR/usr/local"
+              if [ -d "$NESTED_DIR" ]; then  
+                shopt -s dotglob
+                mv "$NESTED_DIR"/* "$STOW_PKG_DIR/"
+                shopt -u dotglob
+                rm -rf "$STOW_PKG_DIR/usr"
+              fi
               cp "$json_file" "$HOME/deps/json/"
               REPACK_NEEDED=true
             else
