@@ -6,6 +6,10 @@ on:
       version:
         description: 'Immich release tag'
         required: true
+      event_id:
+        description: 'A unique ID to track this specific workflow run'
+        required: false
+        type: string
       rebuild:
         description: 'Force rebuild the dependencies'
         required: false

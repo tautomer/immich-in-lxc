@@ -9,6 +9,11 @@ on:
       deps_run_id:
         description: 'Dependency building workflow run ID'
         required: true
+      event_id:
+        description: 'A unique ID to track this specific workflow run'
+        required: false
+        type: string
+
 
 jobs:
   Build-immich:
