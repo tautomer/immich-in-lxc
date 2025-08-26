@@ -1,6 +1,10 @@
 name: Build Immich Dependencies
 
 on:
+  workflow_run:
+    workflows: ["Check for New Immich Version"] 
+    types:
+      - completed
   workflow_dispatch:
     inputs:
       version:
@@ -18,12 +22,39 @@ on:
 jobs:
   Build-dependencies:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - name: Create version file
-        run: echo "${{ github.event.inputs.version }}" > version.txt
+      - name: 'Automated Run: Download parameters artifact'
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v4
+        with:
+          name: run-parameters
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          path: ./run-parameters
 
-      - name: Create is_new_release flag file
-        run: echo "${{ github.event.inputs.is_new_release }}" > is_new_release.txt
+      - name: 'Automated Run: Read parameters'
+        id: read_params
+        if: github.event_name == 'workflow_run'
+        run: |
+          VERSION=$(cat run-parameters/version.txt)
+          IS_NEW_RELEASE=$(cat run-parameters/is_new_release.txt)
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "is_new_release=${IS_NEW_RELEASE}" >> $GITHUB_OUTPUT
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "IS_NEW_RELEASE=${IS_NEW_RELEASE}" >> $GITHUB_ENV
+          echo "REBUILD=false" >> $GITHUB_ENV
+
+      - name: 'Manual Run: Set parameters'
+        id: set_params_manual
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          # For a manual run, we always build but don't trigger a release
+          echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          echo "is_new_release=false" >> $GITHUB_OUTPUT
+          echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+          echo "IS_NEW_RELEASE=false" >> $GITHUB_ENV
+          echo "REBUILD=${{ github.event.inputs.rebuild }}" >> $GITHUB_ENV
 
       - name: Find base-image commit
         id: find_commit
@@ -64,7 +95,7 @@ jobs:
           mkdir -p "$HOME/deps/json"
 
           # force rebuilding everything
-          if [ "${{ github.event.inputs.rebuild }}" == "true" ]; then
+          if [ ${{ env.REBUILD }} == "true" ]; then
             echo "Rebuild flag is set. Skipping download of previous dependencies. Directly proceed to build."
             echo "BUILD_NEEDED=true" >> "$GITHUB_ENV"
             LIBRARIES="libjxl libheif libraw imagemagick libvips"
