@@ -155,7 +155,7 @@ jobs:
           draft: false
           prerelease: false
           artifacts: server.tar.gz,dependencies-release/dependencies.tar.gz
-          token: ${{ secrets.ACTIONS_PAT }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update LATEST_IMMICH_RELEASE variable
         if: ${{ steps.prepare_release.outputs.continue == 'true' || github.event_name == 'workflow_dispatch' }}
