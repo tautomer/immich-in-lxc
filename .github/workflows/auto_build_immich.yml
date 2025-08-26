@@ -64,7 +64,7 @@ jobs:
           EVENT_ID=$(date +%s%N)
           echo "Generated event ID: $EVENT_ID"
 
-          gh workflow run build_dependencies.yml --ref ${{ github.ref_name }} -f event_id=$EVENT_ID
+          gh workflow run build_dependencies.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG -f event_id=$EVENT_ID
 
           RUN_ID=""
           RETRY_COUNT=0
