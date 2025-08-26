@@ -46,6 +46,11 @@ jobs:
     # This job runs if a new release is found OR if the workflow was manually dispatched.
     if: ${{ needs.Check-immich-release.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
       - name: Trigger build_dependencies workflow
         env:
           GITHUB_TOKEN: ${{ secrets.ACTIONS_PAT }}
