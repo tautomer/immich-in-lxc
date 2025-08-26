@@ -108,13 +108,13 @@ jobs:
 
       - name: Modify the installation script
         run: |
-          cp install.sh install.sh.old
+          # cp install.sh install.sh.old
           sed -i "/poetry install --no-root --extras openvino/i\ \ \ \ \ \ \ \ poetry add 'numpy<2'\n\ \ \ \ \ \ \ \ poetry update --lock" install.sh
-          sed -i "s/# install_sharp_and_cli/install_sharp_and_cli_pnpm/g" install.sh
+          # sed -i "s/# install_sharp_and_cli/install_sharp_and_cli_pnpm/g" install.sh
           sed -i "s/^generate_build_lock[[:space:]]*\$/cp \$SCRIPT_DIR\/build-lock.json \$INSTALL_DIR_app/" install.sh
           # debugging output
           # examine the full content of the install.sh script
-          diff install.sh.old install.sh || echo "No changes made to install.sh"
+          # diff install.sh.old install.sh || echo "No changes made to install.sh"
 
       - name: Pre-build
         env:
@@ -149,7 +149,6 @@ jobs:
               export POETRY_CONFIG_DIR=$HOME/.config/pypoetry;
               export NVM_DIR=$HOME/.nvm;
               cd /home/immich/immich-in-lxc;
-              sed -i "s|^generate_build_lock[[:space:]]*\$|cp \$SCRIPT_DIR/build-lock.json \$INSTALL_DIR_app|" install.sh;
               ./install.sh;
               ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python;
               ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3;
