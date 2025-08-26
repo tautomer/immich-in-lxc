@@ -65,7 +65,7 @@ jobs:
             - Download `dependencies.tar.gz` into the home folder of your LXC's root user.
             - To update the dependency libraries
               - If you have installed dependencies with `pre-install.sh`, you must first uninstall them. Navigate to each library's source folder (e.g., `/root/immich-in-lxc/image-source/libheif`) and run the uninstall command.
-              - Extract `tar -xf dependencies.tar.gz`.
+              - Extract `tar -xf dependencies.tar.gz --no-same-owner`.
               - Create the shared /opt/deps directory if it doesn't already exist and move your extracted files into it. This location ensures the libraries are accessible to all users.
                 ```shell
                 mkdir -p /opt/stow
