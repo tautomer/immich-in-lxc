@@ -103,8 +103,43 @@ jobs:
       
       - name: Install build tools
         run: |
-          sudo apt install -yqq build-essential
           npm install -g pnpm@10
+          packages=(
+            libde265-0
+            libexif12
+            libexpat1
+            libgcc-s1
+            libglib2.0-0
+            libgomp1
+            libgsf-1-114
+            liblcms2-2
+            liblqr-1-0
+            libltdl7
+            libmimalloc2.0
+            libopenexr-3-1-30
+            libopenjp2-7
+            librsvg2-2
+            libspng0
+            mesa-utils
+            mesa-va-drivers
+            mesa-vulkan-drivers
+            tini
+            wget
+            zlib1g
+            ocl-icd-libopencl1
+            libio-compress-brotli-perl
+            libwebp7
+            libwebpdemux2
+            libwebpmux3
+            libhwy1t64
+          )
+          for package in "${packages[@]}"; do
+            sudo apt install --no-install-recommends -yqq "$package"
+          done
+
+      - name: Check if vips works
+        run: |
+          vips --version  
 
       - name: Modify the installation script
         run: |
