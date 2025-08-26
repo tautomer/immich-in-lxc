@@ -1,4 +1,4 @@
-name: Check for New Immich Version
+name: Check for New Immich Version and Trigger Build
 
 on:
   schedule:
@@ -15,9 +15,12 @@ jobs:
       - name: Get latest Immich release
         id: check
         run: |
-          # Get the latest release tag
-          LATEST_TAG=$(curl -s https://api.github.com/repos/immich-app/immich/releases/latest | jq -r '.tag_name')
-          echo "latest_release=$LATEST_TAG" >> $GITHUB_ENV
+          LATEST_TAG=$(curl -sL https://api.github.com/repos/immich-app/immich/releases/latest | jq -r '.tag_name')
+          # Handle case where tag is not found
+          if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" == "null" ]; then
+            echo "Failed to fetch latest release tag."
+            exit 1
+          fi
           echo "latest_release=$LATEST_TAG" >> $GITHUB_OUTPUT
 
       - name: Compare latest release with stored one
@@ -25,114 +28,36 @@ jobs:
         env:
           STORED_RELEASE_VAR: ${{ vars.LATEST_IMMICH_RELEASE }}
         run: |
-          # Get the latest release tag from the first step
           LATEST_TAG=${{ steps.check.outputs.latest_release }}
-
-          # Read the previous release tag from the repository variable, fallback to empty if not found
           PREV_TAG="${{ env.STORED_RELEASE_VAR }}"
-
           echo "Latest tag: $LATEST_TAG"
           echo "Previous tag (from variable): $PREV_TAG"
-
           if [ "$LATEST_TAG" != "$PREV_TAG" ]; then
             echo "is_new_release=true" >> $GITHUB_OUTPUT
-            # Notice that a new release is detected and build/release will proceed
-            echo "::notice file=README.md::New release detected: $LATEST_TAG. Build and Release will proceed."
+            echo "::notice::New release detected: $LATEST_TAG. Build will proceed."
           else
             echo "is_new_release=false" >> $GITHUB_OUTPUT
-            echo "::notice file=README.md::No new release detected. Skipping build and release."
+            echo "::notice::No new release detected. Manual build will proceed if triggered."
           fi
-    
-  Auto-build-immich:
+
+  Trigger-Build-Chain:
     needs: Check-immich-release
     runs-on: ubuntu-latest
+    # This job runs if a new release is found OR if the workflow was manually dispatched.
     if: ${{ needs.Check-immich-release.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch' }}
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      LATEST_TAG: ${{ needs.Check-immich-release.outputs.latest_release }}
-      IS_NEW_RELEASE: ${{ needs.Check-immich-release.outputs.is_new_release }}
-      MAX_RETRIES: 6
-      TIMER: 5
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref_name }}
-
-      - name: Trigger and watch build_dependencies workflow
+      - name: Trigger build_dependencies workflow
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACTIONS_PAT }}
+          LATEST_TAG: ${{ needs.Check-immich-release.outputs.latest_release }}
+          IS_NEW_RELEASE: ${{ needs.Check-immich-release.outputs.is_new_release }}
         run: |
-          EVENT_ID=$(date +%s%N)
-          echo "Generated event ID: $EVENT_ID"
+          # If manually triggered, LATEST_TAG might be empty. Use the one from the check job.
+          # For a manual run, we always treat it as a "new release" for building purposes.
+          VERSION_TO_BUILD="${{ github.event.inputs.version || env.LATEST_TAG }}"
+          SHOULD_RELEASE="${{ (github.event_name == 'workflow_dispatch') && 'false' || env.IS_NEW_RELEASE }}"
 
-          gh workflow run build_dependencies.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG -f event_id=$EVENT_ID
+          echo "Triggering build for version $VERSION_TO_BUILD"
+          echo "Is new release flag set to: $SHOULD_RELEASE"
 
-          RUN_ID=""
-          RETRY_COUNT=0
-
-          while [ -z "$RUN_ID" ] && [ "$RETRY_COUNT" -lt "$MAX_RETRIES" ]; do
-            echo "Attempting to get run ID for event $EVENT_ID (Attempt $((RETRY_COUNT + 1)))..."
-            
-            RUN_INFO=$(gh api -H "Accept: application/vnd.github.v3+json" "/repos/${{ github.repository }}/actions/workflows/build_dependencies.yml/runs?event=workflow_dispatch&per_page=100")
-
-            RUN_ID=$(echo "$RUN_INFO" | jq --arg event_id "$EVENT_ID" '.workflow_runs[] | select(.triggering_actor.login == "github-actions[bot]" and .head_branch == "${{ github.ref_name }}" and .id | tostring == $event_id) | .id')
-
-            if [ -z "$RUN_ID" ]; then
-              echo "Run not found yet. Waiting $TIMER seconds..."
-              sleep "$TIMER"
-            fi
-
-            RETRY_COUNT=$((RETRY_COUNT + 1))
-          done
-
-          if [ -n "$RUN_ID" ]; then
-            gh run watch "$RUN_ID"
-          else
-            echo "Failed to get workflow run ID after multiple retries. Exiting."
-            exit 1
-          fi
-
-          echo "DEPS_RUN_ID=$RUN_ID" >> $GITHUB_ENV
-
-      - name: Trigger and watch build_server workflow
-        run: |
-          EVENT_ID=$(date +%s%N)
-          echo "Generated event ID: $EVENT_ID"
-
-          gh workflow run build_server.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG -f deps_run_id=$DEPS_RUN_ID -f event_id=$EVENT_ID
-
-          RUN_ID=""
-          RETRY_COUNT=0
-
-          while [ -z "$RUN_ID" ] && [ "$RETRY_COUNT" -lt "$MAX_RETRIES" ]; do
-            echo "Attempting to get run ID for event $EVENT_ID (Attempt $((RETRY_COUNT + 1)))..."
-
-            RUN_INFO=$(gh api -H "Accept: application/vnd.github.v3+json" "/repos/${{ github.repository }}/actions/workflows/build_server.yml/runs?event=workflow_dispatch&per_page=100")
-
-            RUN_ID=$(echo "$RUN_INFO" | jq --arg event_id "$EVENT_ID" '.workflow_runs[] | select(.triggering_actor.login == "github-actions[bot]" and .head_branch == "${{ github.ref_name }}" and .id | tostring == $event_id) | .id')
-
-            if [ -z "$RUN_ID" ]; then
-              echo "Run not found yet. Waiting $TIMER seconds..."
-              sleep "$TIMER"
-            fi
-
-            RETRY_COUNT=$((RETRY_COUNT + 1))
-          done
-
-          if [ -n "$RUN_ID" ]; then
-            gh run watch "$RUN_ID"
-          else
-            echo "Failed to get workflow run ID after multiple retries. Exiting."
-            exit 1
-          fi
-
-          echo "SVR_RUN_ID=$RUN_ID" >> $GITHUB_ENV
-        
-      - name: Trigger release workflow
-        if: ${{ env.IS_NEW_RELEASE == 'true' }}
-        run: |
-          echo "::notice file=README.md::New release detected, triggering release workflow."
-          gh workflow run release_immich.yml --ref ${{ github.ref_name }} -f version=$LATEST_TAG -f timestamp=$(date) -f deps_run_id=$DEPS_RUN_ID -f svr_run_id=$SVR_RUN_ID
-
-      - name: Skip release workflow if same version
-        if: ${{ env.IS_NEW_RELEASE == 'false' }}
-        run: echo "::notice file=README.md::Same version already released. Skipping release workflow."
+          gh workflow run build_dependencies.yml --ref ${{ github.ref_name }} -f version="$VERSION_TO_BUILD" -f is_new_release="$SHOULD_RELEASE"

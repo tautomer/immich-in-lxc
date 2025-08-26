@@ -1,13 +1,16 @@
 name: Release and Update immich
 
 on:
+  # Automated trigger
+  workflow_run:
+    workflows: ["Build immich on new release"]
+    types:
+      - completed
+  # Manual trigger for testing
   workflow_dispatch:
     inputs:
       version:
         description: 'Immich release tag to be released'
-        required: true
-      timestamp:
-        description: 'Timestamp of the build'
         required: true
       deps_run_id:
         description: 'Dependency building workflow run ID'
@@ -15,41 +18,90 @@ on:
       svr_run_id:
         description: 'Server building workflow run ID'
         required: true
+      timestamp:
+        description: 'Timestamp of the release'
+        required: true
 
 jobs:
   release-and-update:
     runs-on: ubuntu-latest
     permissions:
       contents: write # Needed for creating GitHub Releases
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - name: Download dependencies artifact
+      - name: 'Automated Run: Download server artifact and metadata'
+        if: github.event_name == 'workflow_run'
         uses: actions/download-artifact@v4
         with:
-          repository: ${{ github.repository }}
-          github-token: ${{ secrets.ACTIONS_PAT }}
-          run-id: ${{ github.event.inputs.deps_run_id }}
-          name: dependencies
+          name: server-and-metadata
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          path: ./build-metadata
+        
+      - name: 'Automated Run: Set variables and check for release condition'
+        id: prepare_release
+        if: github.event_name == 'workflow_run'
+        run: |
+          IS_NEW_RELEASE=$(cat build-metadata/is_new_release.txt)
+          if [ "$IS_NEW_RELEASE" != "true" ]; then
+            echo "::notice::Not a new release, skipping the release process."
+            echo "continue=false" >> $GITHUB_OUTPUT
+          else
+            echo "::notice::New release detected, proceeding with release."
+            echo "continue=true" >> $GITHUB_OUTPUT
+            echo "VERSION=$(cat build-metadata/version.txt)" >> $GITHUB_ENV
+            echo "DEPS_RUN_ID=$(cat build-metadata/deps_run_id.txt)" >> $GITHUB_ENV
+            echo "SVR_RUN_ID=${{ github.event.workflow_run.id }}" >> $GITHUB_ENV
+            echo "TIMESTAMP=$(date)" >> $GITHUB_ENV
+            # Move the server artifact to the correct location for the release step
+            mv build-metadata/server.tar.gz server.tar.gz
+          fi
+
+      - name: 'Continue if new release or manual run'
+        if: ${{ steps.prepare_release.outputs.continue == 'true' || github.event_name == 'workflow_dispatch' }}
+        run: echo "Proceeding..."
+      
+      - name: 'Manual Run: Set variables'
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+          echo "TIMESTAMP=${{ github.event.inputs.timestamp }}" >> $GITHUB_ENV
+          echo "DEPS_RUN_ID=${{ github.event.inputs.deps_run_id }}" >> $GITHUB_ENV
+          echo "SVR_RUN_ID=${{ github.event.inputs.svr_run_id }}" >> $GITHUB_ENV
+
+      - name: Download dependencies artifact
+        if: ${{ steps.prepare_release.outputs.continue == 'true' || github.event_name == 'workflow_dispatch' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: dependencies-and-metadata
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ env.DEPS_RUN_ID }}
           path: dependencies-release
 
-      - name: Download server artifact
+      - name: Download server artifact (for manual run)
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/download-artifact@v4
         with:
-          repository: ${{ github.repository }}
-          github-token: ${{ secrets.ACTIONS_PAT }}
-          run-id: ${{ github.event.inputs.svr_run_id }}
-          name: immich-app-${{ github.event.inputs.version }}
-          path: app-release
+          name: server-and-metadata # The name of the artifact from build_server
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ env.SVR_RUN_ID }}
+          path: server-release-temp
+
+      - name: 'Manual Run: Prepare server artifact'
+        if: github.event_name == 'workflow_dispatch'
+        run: mv server-release-temp/server.tar.gz server.tar.gz
+
       
       - name: Create GitHub Release
-        id: create_release
+        if: ${{ steps.prepare_release.outputs.continue == 'true' || github.event_name == 'workflow_dispatch' }}
         uses: ncipollo/release-action@v1
         with:
-          tag: ${{ github.event.inputs.version }}
-          name: immich server ${{ github.event.inputs.version }} with openvino for Ubuntu 24.04
+          tag: ${{ env.VERSION }}
+          name: immich server ${{ env.VERSION }} with openvino for Ubuntu 24.04
           body: |
             This release contains the latest build of immich server:
-            - Version: **${{ github.event.inputs.version }}**
-            - Built on: **${{ github.event.inputs.timestamp }}**
+            - Version: **${{ env.VERSION }}**
+            - Built on: **${{ env.TIMESTAMP }}**
             - Built for: Ubuntu 24.04 LTS with openvino for ML
 
             **How to install**:  
@@ -102,12 +154,13 @@ jobs:
             This release was created automatically by GitHub Actions. You can track the build process here: [GitHub Actions Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
           draft: false
           prerelease: false
-          artifacts: app-release/server.tar.gz,dependencies-release/dependencies.tar.gz
+          artifacts: server.tar.gz,dependencies-release/dependencies.tar.gz
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update LATEST_IMMICH_RELEASE variable
+        if: ${{ steps.prepare_release.outputs.continue == 'true' || github.event_name == 'workflow_dispatch' }}
         run: |
-          LATEST_TAG=${{ github.event.inputs.version }}
+          LATEST_TAG=${{ env.VERSION }}
           echo "::notice file=README.md::Successfully created new release $LATEST_TAG. Updating repository variable."
           curl -X PATCH \
           -H "Authorization: token ${{ secrets.ACTIONS_PAT }}" \

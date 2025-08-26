@@ -1,24 +1,50 @@
 name: Build immich on new release
 
 on:
+  # Automated trigger
+  workflow_run:
+    workflows: ["Build Immich Dependencies"]
+    types:
+      - completed
+  # Manual trigger for testing
   workflow_dispatch:
     inputs:
       version:
         description: 'Immich release tag to be released'
         required: true
       deps_run_id:
-        description: 'Dependency building workflow run ID'
+        description: 'Dependency building workflow run ID for manual run'
         required: true
-      event_id:
-        description: 'A unique ID to track this specific workflow run'
-        required: false
-        type: string
 
 
 jobs:
   Build-immich:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
+      - name: 'Automated Run: Prepare environment'
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v4
+        with:
+          name: dependencies-and-metadata
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          path: ./metadata
+
+      - name: 'Automated Run: Set variables from artifact'
+        if: github.event_name == 'workflow_run'
+        run: |
+          echo "VERSION=$(cat metadata/version.txt)" >> $GITHUB_ENV
+          echo "IS_NEW_RELEASE=$(cat metadata/is_new_release.txt)" >> $GITHUB_ENV
+          echo "DEPS_RUN_ID=${{ github.event.workflow_run.id }}" >> $GITHUB_ENV
+
+      - name: 'Manual Run: Set variables from inputs'
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+          echo "IS_NEW_RELEASE=false" >> $GITHUB_ENV 
+          echo "DEPS_RUN_ID=${{ github.event.inputs.deps_run_id }}" >> $GITHUB_ENV
+
       - name: Checkout my fork
         uses: actions/checkout@v4
         with:
@@ -27,10 +53,10 @@ jobs:
       - name: Download dependencies artifact
         uses: actions/download-artifact@v4
         with:
-          name: dependencies
+          name: dependencies-and-metadata
           repository: ${{ github.repository }}
           github-token: ${{ secrets.ACTIONS_PAT }}
-          run-id: ${{ github.event.inputs.deps_run_id }}
+          run-id: ${{ env.DEPS_RUN_ID }}
           path: .
 
       - name: Extract compiled dependencies
@@ -92,7 +118,7 @@ jobs:
 
       - name: Pre-build
         env:
-          IMMICH_VERSION: ${{ github.event.inputs.version }}
+          IMMICH_VERSION: ${{ env.VERSION }}
           UPLOAD_DIR: ${{ vars.UPLOAD_DIR }}
         run: |
           export INSTALL_DIR=/home/immich
@@ -135,8 +161,12 @@ jobs:
         run: |
           tar -czf server.tar.gz -C $INSTALL_DIR app geodata
 
-      - name: Upload app as artifact
+      - name: Upload server and metadata artifact
         uses: actions/upload-artifact@v4
         with:
-          name: immich-app-${{ github.event.inputs.version }}
-          path: server.tar.gz
+          name: server-and-metadata
+          path: |
+            server.tar.gz
+            version.txt
+            is_new_release.txt
+            deps_run_id.txt
