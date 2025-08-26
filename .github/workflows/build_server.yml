@@ -3,7 +3,7 @@ name: Build immich on new release
 on:
   # Automated trigger
   workflow_run:
-    workflows: ["Build Immich Dependencies"]
+    workflows: ["build_dependencies.yml"]
     types:
       - completed
   # Manual trigger for testing

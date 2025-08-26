@@ -3,7 +3,7 @@ name: Release and Update immich
 on:
   # Automated trigger
   workflow_run:
-    workflows: ["Build immich on new release"]
+    workflows: ["build_server.yml"]
     types:
       - completed
   # Manual trigger for testing
