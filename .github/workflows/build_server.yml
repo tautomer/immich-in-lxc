@@ -27,7 +27,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: dependencies-and-metadata
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.ACTIONS_PAT }}
           run-id: ${{ github.event.workflow_run.id }}
           path: ./metadata
 

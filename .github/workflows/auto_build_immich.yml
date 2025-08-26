@@ -1,4 +1,6 @@
-name: Check for New Immich Version and Trigger Build
+# In .github/workflows/auto_build_immich.yml
+
+name: Check for New Immich Version
 
 on:
   schedule:
@@ -6,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  Check-immich-release:
+  Check-and-prepare:
     runs-on: ubuntu-latest
     outputs:
       latest_release: ${{ steps.check.outputs.latest_release }}
@@ -16,9 +18,8 @@ jobs:
         id: check
         run: |
           LATEST_TAG=$(curl -sL https://api.github.com/repos/immich-app/immich/releases/latest | jq -r '.tag_name')
-          # Handle case where tag is not found
           if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" == "null" ]; then
-            echo "Failed to fetch latest release tag."
+            echo "Failed to fetch latest release tag. Exiting."
             exit 1
           fi
           echo "latest_release=$LATEST_TAG" >> $GITHUB_OUTPUT
@@ -34,35 +35,20 @@ jobs:
           echo "Previous tag (from variable): $PREV_TAG"
           if [ "$LATEST_TAG" != "$PREV_TAG" ]; then
             echo "is_new_release=true" >> $GITHUB_OUTPUT
-            echo "::notice::New release detected: $LATEST_TAG. Build will proceed."
+            echo "::notice::New release detected: $LATEST_TAG."
           else
             echo "is_new_release=false" >> $GITHUB_OUTPUT
-            echo "::notice::No new release detected. Manual build will proceed if triggered."
+            echo "::notice::No new release detected."
           fi
 
-  Trigger-Build-Chain:
-    needs: Check-immich-release
-    runs-on: ubuntu-latest
-    # This job runs if a new release is found OR if the workflow was manually dispatched.
-    if: ${{ needs.Check-immich-release.outputs.is_new_release == 'true' || github.event_name == 'workflow_dispatch' }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref_name }}
-
-      - name: Trigger build_dependencies workflow
-        env:
-          GITHUB_TOKEN: ${{ secrets.ACTIONS_PAT }}
-          LATEST_TAG: ${{ needs.Check-immich-release.outputs.latest_release }}
-          IS_NEW_RELEASE: ${{ needs.Check-immich-release.outputs.is_new_release }}
+      - name: Save parameters to artifact
         run: |
-          # If manually triggered, LATEST_TAG might be empty. Use the one from the check job.
-          # For a manual run, we always treat it as a "new release" for building purposes.
-          VERSION_TO_BUILD="${{ github.event.inputs.version || env.LATEST_TAG }}"
-          SHOULD_RELEASE="${{ (github.event_name == 'workflow_dispatch') && 'false' || env.IS_NEW_RELEASE }}"
-
-          echo "Triggering build for version $VERSION_TO_BUILD"
-          echo "Is new release flag set to: $SHOULD_RELEASE"
-
-          gh workflow run build_dependencies.yml --ref ${{ github.ref_name }} -f version="$VERSION_TO_BUILD" -f is_new_release="$SHOULD_RELEASE"
+          mkdir -p run-parameters
+          echo "${{ steps.check.outputs.latest_release }}" > run-parameters/version.txt
+          echo "${{ steps.compare.outputs.is_new_release }}" > run-parameters/is_new_release.txt
+      
+      - name: Upload parameters artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-parameters
+          path: run-parameters/
