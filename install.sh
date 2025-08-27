@@ -252,6 +252,7 @@ install_immich_web_server_pnpm () {
     
     # Install dependencies
     rm -f pnpm-lock.yaml
+    npm_config_sharp_binary_host="" SHARP_FORCE_GLOBAL_LIBVIPS=true pnpm install sharp
     pnpm install 
 
     pnpm --filter immich build
