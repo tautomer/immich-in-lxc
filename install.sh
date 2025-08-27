@@ -251,13 +251,13 @@ install_immich_web_server_pnpm () {
     rm -r $INSTALL_DIR_app 
     
     # Install dependencies
-    pnpm install --frozen-lockfile
-    SHARP_IGNORE_GLOBAL_LIBVIPS=false npm_config_build_from_source=true pnpm rebuild sharp
+    rm -f pnpm-lock.yaml
+    pnpm install 
 
     pnpm --filter immich build
     pnpm --filter @immich/sdk --filter immich-web build
     # Build and deploy the server component.
-    SHARP_IGNORE_GLOBAL_LIBVIPS=true pnpm --filter immich --prod deploy $INSTALL_DIR_app
+    pnpm --filter immich --prod deploy $INSTALL_DIR_app
 
     # Build and deploy the CLI.
     pnpm --filter @immich/cli --prod --no-optional deploy $INSTALL_DIR_app/cli
