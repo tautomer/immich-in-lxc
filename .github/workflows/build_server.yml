@@ -105,36 +105,37 @@ jobs:
         run: |
           npm install -g pnpm@10
           packages=(
-            libde265-0
-            libexif12
-            libexpat1
-            libgcc-s1
-            libglib2.0-0
-            libgomp1
-            libgsf-1-114
+            build-essential
+            libdav1d-dev
+            cmake
+            libbrotli-dev
+            libde265-dev
+            libexif-dev
+            libexpat1-dev
+            libglib2.0-dev
+            libgsf-1-dev
             liblcms2-2
-            liblqr-1-0
-            libltdl7
-            libmimalloc2.0
-            libopenexr-3-1-30
-            libopenjp2-7
-            librsvg2-2
-            libspng0
-            mesa-utils
-            mesa-va-drivers
-            mesa-vulkan-drivers
-            tini
-            wget
+            libspng-dev
+            librsvg2-dev
+            meson
+            ninja-build
             zlib1g
-            ocl-icd-libopencl1
+            libltdl-dev
+            cpanminus
+            libtool
+            liblcms2-dev
+            libgif-dev
+            libpango1.0-dev
+            libdav1d-dev
+            libhwy-dev
+            libwebp-dev
             libio-compress-brotli-perl
-            libwebp7
-            libwebpdemux2
-            libwebpmux3
-            libhwy1t64
+            libaom-dev
           )
-          for package in "${packages[@]}"; do
-            sudo apt install --no-install-recommends -yqq "$package"
+
+          for pkg in "${packages[@]}"; do
+            echo "Installing $pkg..."
+            sudo apt install --no-install-recommends -yqq "$pkg"
           done
 
       - name: Check if vips works
