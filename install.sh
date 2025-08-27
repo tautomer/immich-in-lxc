@@ -252,16 +252,17 @@ install_immich_web_server_pnpm () {
     
     # Install dependencies
     rm -f pnpm-lock.yaml
+    # sharp can be built from source successfully
     npm_config_sharp_binary_host="" SHARP_FORCE_GLOBAL_LIBVIPS=true pnpm install
     pnpm install 
 
-    pnpm --filter immich build
-    pnpm --filter @immich/sdk --filter immich-web build
+    pnpm --filter immich --frozen-lockfile build
+    pnpm --filter @immich/sdk --filter immich-web --frozen-lockfile build
     # Build and deploy the server component.
     pnpm --filter immich --prod deploy $INSTALL_DIR_app
 
     # Build and deploy the CLI.
-    pnpm --filter @immich/cli --prod --no-optional deploy $INSTALL_DIR_app/cli
+    pnpm --filter @immich/cli --frozen-lockfile --prod --no-optional deploy $INSTALL_DIR_app/cli
 
     ln -s ../cli/bin/immich $INSTALL_DIR_app/bin/immich
 
