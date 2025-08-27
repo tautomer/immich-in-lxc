@@ -248,19 +248,19 @@ install_immich_web_server_pnpm () {
         pnpm config set registry=$PROXY_NPM
     fi
 
-    jq '(.pnpm.overrides += {"sharp": "0.34.2", "nestjs-kysely": "3.0.0", "kysely": "0.28.2"}) | del(.overrides)' \
-        server/package.json > server/package.json.tmp && mv server/package.json.tmp server/package.json
+    # jq '(.pnpm.overrides += {"sharp": "0.34.2", "nestjs-kysely": "3.0.0", "kysely": "0.28.2"}) | del(.overrides)' \
+    #     server/package.json > server/package.json.tmp && mv server/package.json.tmp server/package.json
 
     # debugging
     cat server/package.json 
 
     rm -r $INSTALL_DIR_app 
+
+    # rm -f pnpm-lock.yml
     
     # Install dependencies
-    rm -f pnpm-lock.yaml
-    # sharp can be built from source successfully
+    pnpm install --frozen-lockfile
     npm_config_sharp_binary_host="" SHARP_FORCE_GLOBAL_LIBVIPS=true pnpm install
-    pnpm install 
 
     pnpm --filter immich --frozen-lockfile build
     pnpm --filter @immich/sdk --filter immich-web --frozen-lockfile build
