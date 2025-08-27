@@ -248,6 +248,9 @@ install_immich_web_server_pnpm () {
         pnpm config set registry=$PROXY_NPM
     fi
 
+    jq '(.pnpm.overrides += {"sharp": "0.34.2", "nestjs-kysely": "0.5.1", "kysely": "0.27.3"}) | del(.overrides)' \
+        server/package.json > server/package.json.tmp && mv server/package.json.tmp server/package.json
+
     rm -r $INSTALL_DIR_app 
     
     # Install dependencies
