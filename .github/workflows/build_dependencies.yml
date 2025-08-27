@@ -256,7 +256,7 @@ jobs:
             NESTED_DIR="$STOW_PKG_DIR/usr/local"
             if [ -d "$NESTED_DIR" ]; then  
               shopt -s dotglob
-              mv "$NESTED_DIR"/* "$STOW_PKG_DIR/"
+              sudo mv "$NESTED_DIR"/* "$STOW_PKG_DIR/"
               shopt -u dotglob
               rm -rf "$STOW_PKG_DIR/usr"
             fi
