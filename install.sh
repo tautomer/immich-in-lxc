@@ -248,16 +248,8 @@ install_immich_web_server_pnpm () {
         pnpm config set registry=$PROXY_NPM
     fi
 
-    # jq '(.pnpm.overrides += {"sharp": "0.34.2", "nestjs-kysely": "3.0.0", "kysely": "0.28.2"}) | del(.overrides)' \
-    #     server/package.json > server/package.json.tmp && mv server/package.json.tmp server/package.json
-
-    # debugging
-    cat server/package.json 
-
     rm -r $INSTALL_DIR_app 
 
-    # rm -f pnpm-lock.yml
-    
     # Install dependencies
     pnpm install --frozen-lockfile
     npm_config_sharp_binary_host="" SHARP_FORCE_GLOBAL_LIBVIPS=true pnpm install
@@ -275,7 +267,6 @@ install_immich_web_server_pnpm () {
     # Copy the built Web UI to the target directory.
     cp -a web/build $INSTALL_DIR_app/www
 
-    # Copy remaining assets.
     cp -a LICENSE $INSTALL_DIR_app/
     cp -a i18n $INSTALL_DIR/
     cp -a server/bin/get-cpus.sh server/bin/start.sh $INSTALL_DIR_app/
@@ -458,28 +449,6 @@ replace_usr_src
 # -------------------
 # Install sharp and CLI
 # -------------------
-
-install_sharp_and_cli_pnpm () {
-    cd $INSTALL_DIR_app
-
-    # Set mirror for npm
-    if [ ! -z "${PROXY_NPM}" ]; then
-        pnpm config set registry=$PROXY_NPM
-    fi
-    # Set npm args
-    if $isNPM_BUILD_FROM_SOURCE; then
-        npm_args="true"
-    else
-        npm_args="false"
-    fi
-
-    npm_config_build_from_source=$npm_args pnpm add --force sharp
-
-    # Unset mirror for npm
-    if [ ! -z "${PROXY_NPM}" ]; then
-        pnpm config delete registry
-    fi
-}
 
 install_sharp_and_cli () {
     cd $INSTALL_DIR_app
