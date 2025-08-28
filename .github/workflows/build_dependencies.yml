@@ -253,10 +253,11 @@ jobs:
             mkdir -p "$STOW_PKG_DIR"
             chmod u+x "$sh_file"
             sudo ./"$sh_file" $args
+            sudo chown -R $(whoami):$(whoami) "$STOW_PKG_DIR"
             NESTED_DIR="$STOW_PKG_DIR/usr/local"
             if [ -d "$NESTED_DIR" ]; then  
               shopt -s dotglob
-              sudo mv "$NESTED_DIR"/* "$STOW_PKG_DIR/"
+              mv "$NESTED_DIR"/* "$STOW_PKG_DIR/"
               shopt -u dotglob
               rm -rf "$STOW_PKG_DIR/usr"
             fi
