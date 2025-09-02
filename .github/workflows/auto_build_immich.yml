@@ -1,4 +1,4 @@
-name: Master Build Workflow
+name: Auto Build Workflow
 
 on:
   schedule:
@@ -69,13 +69,14 @@ jobs:
         env:
           CURRENT_VERSION: ${{ steps.check_version.outputs.version }}
           STORED_VERSION: ${{ vars.LATEST_IMMICH_RELEASE }}
-          ACTION: ${{ github.event.inputs.action }}
-          SKIP_DEP_CHECK: ${{ github.event.inputs.skip_dependency_check }}
-          SKIP_RELEASE: ${{ github.event.inputs.skip_release }}
+          ACTION: ${{ github.event.inputs.action || 'check-and-build' }}
+          SKIP_DEP_CHECK: ${{ github.event.inputs.skip_dependency_check || 'false' }}
+          SKIP_RELEASE: ${{ github.event.inputs.skip_release || 'false' }}
         run: |
           echo "Current version: $CURRENT_VERSION"
           echo "Stored version: $STORED_VERSION"
           echo "Action: $ACTION"
+          echo "Event name: ${{ github.event_name }}"
           
           # Determine if this is a new release
           if [ "$CURRENT_VERSION" != "$STORED_VERSION" ]; then
@@ -86,6 +87,12 @@ jobs:
             echo "::notice::No new release detected"
           fi
           
+          # For scheduled runs, override action to check-and-build
+          if [ "${{ github.event_name }}" == "schedule" ]; then
+            ACTION="check-and-build"
+            echo "Scheduled run detected, using action: $ACTION"
+          fi
+          
           # Decision logic based on action
           case "$ACTION" in
             "check-and-build")
@@ -93,31 +100,37 @@ jobs:
                 BUILD_DEPS=true
                 BUILD_SERVER=true
                 CREATE_RELEASE=true
+                echo "::notice::New release found, will build everything"
               else
                 BUILD_DEPS=false
                 BUILD_SERVER=false
                 CREATE_RELEASE=false
+                echo "::notice::No new release, skipping build"
               fi
               ;;
             "force-rebuild-all")
               BUILD_DEPS=true
               BUILD_SERVER=true
               CREATE_RELEASE=true
+              echo "::notice::Force rebuild requested"
               ;;
             "dependencies-only")
               BUILD_DEPS=true
               BUILD_SERVER=false
               CREATE_RELEASE=false
+              echo "::notice::Building dependencies only"
               ;;
             "server-only")
               BUILD_DEPS=false
               BUILD_SERVER=true
               CREATE_RELEASE=false
+              echo "::notice::Building server only"
               ;;
             "release-existing")
               BUILD_DEPS=false
               BUILD_SERVER=false
               CREATE_RELEASE=true
+              echo "::notice::Creating release from existing artifacts"
               ;;
             *)
               echo "::error::Unknown action: $ACTION"
@@ -128,14 +141,7 @@ jobs:
           # Override release decision if skip_release is true
           if [ "$SKIP_RELEASE" == "true" ]; then
             CREATE_RELEASE=false
-          fi
-          
-          # For scheduled runs, only proceed if there's a new release
-          if [ "${{ github.event_name }}" == "schedule" ] && [ "$IS_NEW_RELEASE" != "true" ]; then
-            echo "::notice::Scheduled run with no new release, skipping build"
-            BUILD_DEPS=false
-            BUILD_SERVER=false
-            CREATE_RELEASE=false
+            echo "::notice::Release skipped due to skip_release flag"
           fi
           
           echo "should_build_deps=$BUILD_DEPS" >> $GITHUB_OUTPUT
@@ -143,7 +149,7 @@ jobs:
           echo "should_release=$CREATE_RELEASE" >> $GITHUB_OUTPUT
           echo "is_new_release=$IS_NEW_RELEASE" >> $GITHUB_OUTPUT
           
-          echo "::notice::Build decisions - Deps: $BUILD_DEPS, Server: $BUILD_SERVER, Release: $CREATE_RELEASE"
+          echo "::notice::Final decisions - Deps: $BUILD_DEPS, Server: $BUILD_SERVER, Release: $CREATE_RELEASE"
 
   build-dependencies:
     needs: orchestrator
