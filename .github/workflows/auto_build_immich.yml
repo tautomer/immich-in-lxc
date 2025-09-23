@@ -177,8 +177,8 @@ jobs:
           # Use the GitHub Releases API to find the commit SHA for that tag
           COMMIT_SHA=$(curl -sL \
             -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/immich-app/base-images/releases/tags/$BASE_IMAGE_TAG" | \
-            jq -r '.target_commitish')
+            "https://api.github.com/repos/immich-app/base-images/git/refs/tags/$BASE_IMAGE_TAG" | \
+            jq -r '.object.sha')
 
           echo "Found commit SHA: $COMMIT_SHA"
           echo "base_commit=${COMMIT_SHA}" >> "$GITHUB_ENV"
