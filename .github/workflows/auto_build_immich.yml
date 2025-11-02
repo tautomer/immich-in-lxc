@@ -483,7 +483,7 @@ jobs:
 
       - name: Modify the installation script
         run: |
-          sed -i "/poetry install --no-root --extras openvino/i\ \ \ \ \ \ \ \ poetry add 'numpy<2'\n\ \ \ \ \ \ \ \ poetry update --lock" install.sh
+          sed -i "/poetry install --no-root --extras openvino/i\ \ \ \ \ \ \ \ poetry add 'numpy<2'\n\ \ \ \ \ \ \ \ poetry add 'rapidocr<3.4.2'\n\ \ \ \ \ \ \ \ poetry update --lock" install.sh
           sed -i "s/^generate_build_lock[[:space:]]*\$/cp \$SCRIPT_DIR\/build-lock.json \$INSTALL_DIR_app/" install.sh
 
       - name: Pre-build setup
