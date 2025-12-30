@@ -343,6 +343,62 @@ install_immich_web_server () {
 install_immich_web_server_pnpm
 
 # -------------------
+# Build and install plugins with mise (2.3.0+)
+# -------------------
+
+install_plugins_with_mise () {
+    # Check if version >= 2.3.0
+    if [ "$MAJOR_VERSION" -lt 2 ] || ([ "$MAJOR_VERSION" -eq 2 ] && [ "$MINOR_VERSION" -lt 3 ]); then
+        echo "Immich version $REPO_TAG < 2.3.0, skipping plugin installation and mise"
+        return 0
+    fi
+
+    # Fetch the Dockerfile from the repo to get mise version
+    DOCKERFILE_URL="https://raw.githubusercontent.com/immich-app/immich/refs/tags/$REPO_TAG/server/Dockerfile"
+    DOCKERFILE_CONTENT=$(curl -s "$DOCKERFILE_URL")
+    
+    # Find the mise installation line and extract the URL
+    MISE_LINE=$(echo "$DOCKERFILE_CONTENT" | grep -i "ghcr.io/jdx/mise" | head -n1)
+
+    # Extract the version tag 
+    MISE_VERSION=$(echo "$MISE_LINE" | grep -oP 'jdx/mise:\K[^@]+' | head -n1)
+    
+    # Download mise binary to /tmp
+    MISE_URL="https://github.com/jdx/mise/releases/download/v$MISE_VERSION/mise-v$MISE_VERSION-linux-x64"
+    MISE_BIN="/tmp/mise"
+    
+    echo "Downloading mise from $MISE_URL"
+    if ! curl -fL -o "$MISE_BIN" "$MISE_URL"; then
+        echo "Failed to download mise from $MISE_URL"
+        return 1
+    fi
+
+    # Make it executable
+    chmod +x "$MISE_BIN"
+
+    echo "Successfully downloaded mise to $MISE_BIN"
+
+    cd $INSTALL_DIR_src
+
+    echo "Building plugins with mise"
+
+    # Build plugins using mise
+    export MISE_TRUSTED_CONFIG_PATHS=$INSTALL_DIR_src/plugins/mise.toml
+    "$MISE_BIN" install --cd plugins
+    cd plugins && "$MISE_BIN" run build
+    cd ..
+    
+    # Create plugin directory structure
+    mkdir -p $INSTALL_DIR_app/corePlugin
+    cp -a plugins/dist $INSTALL_DIR_app/corePlugin/
+    cp plugins/manifest.json $INSTALL_DIR_app/corePlugin/
+
+    echo "Successfully built and installed plugins"
+}
+
+install_plugins_with_mise
+
+# -------------------
 # Generate build-lock
 # -------------------
 
