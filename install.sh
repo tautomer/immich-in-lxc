@@ -383,10 +383,11 @@ install_plugins_with_mise () {
     echo "Building plugins with mise"
 
     # Build plugins using mise
-    export MISE_TRUSTED_CONFIG_PATHS=$INSTALL_DIR_src/plugins/mise.toml
-    "$MISE_BIN" install --cd plugins
-    cd plugins && "$MISE_BIN" run build
-    cd ..
+    export MISE_YES=1
+    export MISE_TRUSTED_CONFIG_PATHS="$INSTALL_DIR_src"
+    cd $INSTALL_DIR_src/plugins
+    "$MISE_BIN" run build
+    cd $INSTALL_DIR_src
     
     # Create plugin directory structure
     mkdir -p $INSTALL_DIR_app/corePlugin
