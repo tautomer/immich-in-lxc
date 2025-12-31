@@ -160,8 +160,9 @@ INSTALL_DIR_ml=$INSTALL_DIR_app/machine-learning
 INSTALL_DIR_geo=$INSTALL_DIR/geodata
 TMP_DIR=/tmp/$(whoami)/immich-in-lxc/
 REPO_URL="https://github.com/immich-app/immich"
-MAJOR_VERSION=$(echo $REPO_TAG | cut -d'.' -f1) # No longer used, but might worth keeping it around
-MINOR_VERSION=$(echo $REPO_TAG | cut -d'.' -f2) # No longer used, but might worth keeping it around
+TAG_VERSION=${REPO_TAG#v}
+MAJOR_VERSION=$(echo $TAG_VERSION | cut -d'.' -f1) # No longer used, but might worth keeping it around
+MINOR_VERSION=$(echo $TAG_VERSION | cut -d'.' -f2) # No longer used, but might worth keeping it around
 
 # The idea is that when one needs to sets up a proxy for NPM, 
 # they might not have good access to GitHub
