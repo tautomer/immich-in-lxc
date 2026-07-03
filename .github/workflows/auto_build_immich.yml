@@ -436,9 +436,9 @@ jobs:
           sudo apt install -y python3.11 python3.11-venv python3.11-dev
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
       
       - name: Install build tools
         run: |
