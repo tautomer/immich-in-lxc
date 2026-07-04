@@ -255,7 +255,14 @@ install_immich_web_server_pnpm () {
     pnpm install --frozen-lockfile
     npm_config_build_from_source=true pnpm rebuild sharp
 
-    pnpm --filter immich build
+    # Newer immich releases (3.0+) split out the @immich/plugin-sdk workspace
+    # package, which the server imports and must be built first. Older tags
+    # don't have it, so only add the filter when the package exists.
+    if [ -d packages/plugin-sdk ]; then
+        pnpm --filter @immich/plugin-sdk --filter immich build
+    else
+        pnpm --filter immich build
+    fi
     pnpm --filter @immich/sdk --filter immich-web build
     # Build and deploy the server component.
     SHARP_FORCE_GLOBAL_LIBVIPS=true pnpm --filter immich --prod deploy $INSTALL_DIR_app
