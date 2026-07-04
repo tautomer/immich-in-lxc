@@ -392,17 +392,33 @@ install_plugins_with_mise () {
 
     echo "Building plugins with mise"
 
-    # Build plugins using mise
     export MISE_YES=1
-    export MISE_TRUSTED_CONFIG_PATHS="$INSTALL_DIR_src"
-    cd $INSTALL_DIR_src/plugins
-    "$MISE_BIN" run build
-    cd $INSTALL_DIR_src
-    
-    # Create plugin directory structure
-    mkdir -p $INSTALL_DIR_app/corePlugin
-    cp -a plugins/dist $INSTALL_DIR_app/corePlugin/
-    cp plugins/manifest.json $INSTALL_DIR_app/corePlugin/
+
+    # The plugin layout changed in immich 3.0: the old top-level plugins/
+    # directory became packages/plugin-core/, the mise config moved to the
+    # repo root, and the build task is now the monorepo task //:plugins.
+    # The server expects the built core plugin under
+    # $INSTALL_DIR_app/plugins/immich-plugin-core/ (see config.repository.ts).
+    if [ -d "$INSTALL_DIR_src/packages/plugin-core" ]; then
+        # New (3.0+) layout
+        export MISE_TRUSTED_CONFIG_PATHS="$INSTALL_DIR_src"
+        cd $INSTALL_DIR_src
+        "$MISE_BIN" //:plugins
+
+        mkdir -p $INSTALL_DIR_app/plugins/immich-plugin-core
+        cp -a packages/plugin-core/dist $INSTALL_DIR_app/plugins/immich-plugin-core/
+        cp packages/plugin-core/manifest.json $INSTALL_DIR_app/plugins/immich-plugin-core/
+    else
+        # Old (pre-3.0) layout
+        export MISE_TRUSTED_CONFIG_PATHS="$INSTALL_DIR_src"
+        cd $INSTALL_DIR_src/plugins
+        "$MISE_BIN" run build
+        cd $INSTALL_DIR_src
+
+        mkdir -p $INSTALL_DIR_app/corePlugin
+        cp -a plugins/dist $INSTALL_DIR_app/corePlugin/
+        cp plugins/manifest.json $INSTALL_DIR_app/corePlugin/
+    fi
 
     echo "Successfully built and installed plugins"
 }
