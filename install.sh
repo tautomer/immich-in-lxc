@@ -402,6 +402,13 @@ install_plugins_with_mise () {
     if [ -d "$INSTALL_DIR_src/packages/plugin-core" ]; then
         # New (3.0+) layout
         export MISE_TRUSTED_CONFIG_PATHS="$INSTALL_DIR_src"
+        # mise's node/npm shims re-exec `mise` by name, so it must be on PATH
+        # (the binary lives at $MISE_BIN, e.g. /tmp/mise).
+        export PATH="$(dirname "$MISE_BIN"):$PATH"
+        # Running //:plugins from the repo root would otherwise provision the
+        # whole monorepo toolchain (java, opentofu, ffmpeg, oazapfts, flutter,
+        # ...). None of those are needed to build the core plugin.
+        export MISE_DISABLE_TOOLS="java,opentofu,terragrunt,flutter,npm:oazapfts,github:jellyfin/jellyfin-ffmpeg"
         cd $INSTALL_DIR_src
         "$MISE_BIN" //:plugins
 
