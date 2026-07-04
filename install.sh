@@ -256,10 +256,12 @@ install_immich_web_server_pnpm () {
     npm_config_build_from_source=true pnpm rebuild sharp
 
     # Newer immich releases (3.0+) split out the @immich/plugin-sdk workspace
-    # package, which the server imports and must be built first. Older tags
-    # don't have it, so only add the filter when the package exists.
+    # package, which the server imports and must be built first. plugin-sdk
+    # itself depends on @immich/sdk, so build all three together and let pnpm
+    # resolve the order (matches upstream server/Dockerfile). Older tags don't
+    # have plugin-sdk, so only add the filter when the package exists.
     if [ -d packages/plugin-sdk ]; then
-        pnpm --filter @immich/plugin-sdk --filter immich build
+        pnpm --filter @immich/sdk --filter @immich/plugin-sdk --filter immich build
     else
         pnpm --filter immich build
     fi
