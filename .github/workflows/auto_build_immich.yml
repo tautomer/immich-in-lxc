@@ -483,7 +483,9 @@ jobs:
 
       - name: Modify the installation script
         run: |
-          sed -i "/poetry install --no-root --extras openvino/i\ \ \ \ \ \ \ \ poetry add 'numpy<2'\n\ \ \ \ \ \ \ \ poetry add 'rapidocr<3.4.2'\n\ \ \ \ \ \ \ \ poetry update --lock" install.sh
+          # Immich v3.2 requires NumPy 2.1+ through onnx/ml-dtypes; do not
+          # reintroduce the legacy NumPy <2 pin here.
+          sed -i "/poetry install --no-root --extras openvino/i\ \ \ \ \ \ \ \ poetry add 'rapidocr<3.4.2'\n\ \ \ \ \ \ \ \ poetry update --lock" install.sh
           sed -i "s/^generate_build_lock[[:space:]]*\$/cp \$SCRIPT_DIR\/build-lock.json \$INSTALL_DIR_app/" install.sh
 
       - name: Pre-build setup
@@ -509,6 +511,7 @@ jobs:
         run: |
             sudo ln -sf /usr/bin/python3.11 /usr/bin/python3
             sudo -iu immich env "PATH=$PATH" bash -c '
+              set -euo pipefail;
               alias pnpm=/usr/local/bin/pnpm;
               export XDG_CONFIG_HOME=$HOME/.config;
               export POETRY_CONFIG_DIR=$HOME/.config/pypoetry;
@@ -517,7 +520,9 @@ jobs:
               ./install.sh;
               ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python;
               ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3;
-              ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3.11
+              ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3.11;
+              test -s /home/immich/app/dist/main.js;
+              grep -Fq "exec node /home/immich/app/dist/main" /home/immich/app/start.sh
             '
             echo "timestamp=$(date)" >> $GITHUB_OUTPUT
 
