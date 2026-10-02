@@ -533,18 +533,37 @@ jobs:
               ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3;
               ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3.11;
               test -s /home/immich/app/dist/main.js;
-              grep -Fq "exec node /home/immich/app/dist/main" /home/immich/app/start.sh;
-              cd /home/immich/app;
-              test ! -d node_modules/@img/sharp-linux-x64;
-              test ! -d node_modules/@img/sharp-libvips-linux-x64;
-              SHARP_NATIVE="$(find -L node_modules/sharp -type f -name "*.node" -print -quit)";
-              test -n "$SHARP_NATIVE";
-              echo "Sharp native module: $SHARP_NATIVE";
-              ldd "$SHARP_NATIVE";
-              ldd "$SHARP_NATIVE" | grep -Fq "libvips-cpp.so.42 => /usr/local/lib/";
-              node -e "const sharp=require(\"sharp\"); console.log(sharp.versions)"
+              grep -Fq "exec node /home/immich/app/dist/main" /home/immich/app/start.sh
             '
             echo "timestamp=$(date)" >> $GITHUB_OUTPUT
+
+      - name: Verify server runtime artifact
+        run: |
+          sudo -iu immich env "PATH=$PATH" bash -c '
+            set -euo pipefail;
+            cd /home/immich/app;
+            for package in node_modules/@img/sharp-linux-x64 node_modules/@img/sharp-libvips-linux-x64; do
+              if [ -e "$package" ] || [ -L "$package" ]; then
+                echo "::error::Optional prebuilt Sharp package is present: $package";
+                exit 1;
+              fi;
+            done;
+            SHARP_DIR="$(readlink -f node_modules/sharp)";
+            SHARP_NATIVE="$(find "$SHARP_DIR" -type f -name "*.node" -print -quit)";
+            if [ -z "$SHARP_NATIVE" ]; then
+              echo "::error::Source-built Sharp native module was not found under $SHARP_DIR";
+              find "$SHARP_DIR" -maxdepth 4 -type f -print;
+              exit 1;
+            fi;
+            echo "Sharp native module: $SHARP_NATIVE";
+            LDD_OUTPUT="$(ldd "$SHARP_NATIVE")";
+            echo "$LDD_OUTPUT";
+            if ! grep -Fq "libvips-cpp.so.42 => /usr/local/lib/" <<< "$LDD_OUTPUT"; then
+              echo "::error::Sharp is not linked to global libvips under /usr/local/lib";
+              exit 1;
+            fi;
+            node -e "const sharp=require(\"sharp\"); console.log(sharp.versions)"
+          '
 
       - name: Archive app folder
         run: |
