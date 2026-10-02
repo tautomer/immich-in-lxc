@@ -559,7 +559,7 @@ jobs:
               echo "::error::Optional prebuilt Sharp package is present: $OPTIONAL_SHARP";
               exit 1;
             fi;
-            SHARP_NATIVE="$(find node_modules/.pnpm -type f -path "*/node_modules/sharp/src/build/Release/*.node" -print -quit)";
+            SHARP_NATIVE="$(find node_modules/.pnpm -type f -name "sharp-linux-x64-*.node" -print -quit)";
             if [ -z "$SHARP_NATIVE" ]; then
               echo "::error::Source-built Sharp native module was not found in the deployed pnpm store";
               find node_modules/.pnpm -maxdepth 8 -type f -name "*.node" -print;
