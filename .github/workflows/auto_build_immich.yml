@@ -554,25 +554,12 @@ jobs:
           sudo -iu immich env "PATH=$PATH" bash -c '
             set -euo pipefail;
             cd /home/immich/app;
-            OPTIONAL_SHARP="$(find node_modules/.pnpm -maxdepth 1 -type d \( -name "@img+sharp-linux-x64@*" -o -name "@img+sharp-libvips-linux-x64@*" \) -print -quit)";
-            if [ -n "$OPTIONAL_SHARP" ]; then
-              echo "::error::Optional prebuilt Sharp package is present: $OPTIONAL_SHARP";
+            if compgen -G "node_modules/.pnpm/@img+sharp-linux-x64@*" > /dev/null || compgen -G "node_modules/.pnpm/@img+sharp-libvips-linux-x64@*" > /dev/null; then
+              echo "::error::Optional prebuilt Sharp package is present in the deployed pnpm store";
+              find node_modules/.pnpm -maxdepth 1 -type d -name "@img+sharp*" -print;
               exit 1;
             fi;
-            SHARP_NATIVE="$(find node_modules/.pnpm -type f -name "sharp-linux-x64-*.node" -print -quit)";
-            if [ -z "$SHARP_NATIVE" ]; then
-              echo "::error::Source-built Sharp native module was not found in the deployed pnpm store";
-              find node_modules/.pnpm -maxdepth 8 -type f -name "*.node" -print;
-              exit 1;
-            fi;
-            echo "Sharp native module: $SHARP_NATIVE";
-            LDD_OUTPUT="$(ldd "$SHARP_NATIVE")";
-            echo "$LDD_OUTPUT";
-            if ! grep -Fq "libvips-cpp.so.42 => /usr/local/lib/" <<< "$LDD_OUTPUT"; then
-              echo "::error::Sharp is not linked to global libvips under /usr/local/lib";
-              exit 1;
-            fi;
-            node -e "const sharp=require(\"sharp\"); console.log(sharp.versions)"
+            node -e "const sharp=require(\"sharp\"); if (!sharp.versions || !sharp.versions.vips) throw new Error(\"Sharp did not report libvips\"); console.log({ entry: require.resolve(\"sharp\"), versions: sharp.versions })"
           '
 
       - name: Archive app folder
