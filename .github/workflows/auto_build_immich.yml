@@ -537,7 +537,11 @@ jobs:
               cd /home/immich/app;
               test ! -d node_modules/@img/sharp-linux-x64;
               test ! -d node_modules/@img/sharp-libvips-linux-x64;
-              test -n "$(find node_modules/sharp -type f -name "*.node" -print -quit)";
+              SHARP_NATIVE="$(find -L node_modules/sharp -type f -name "*.node" -print -quit)";
+              test -n "$SHARP_NATIVE";
+              echo "Sharp native module: $SHARP_NATIVE";
+              ldd "$SHARP_NATIVE";
+              ldd "$SHARP_NATIVE" | grep -Fq "libvips-cpp.so.42 => /usr/local/lib/";
               node -e "const sharp=require(\"sharp\"); console.log(sharp.versions)"
             '
             echo "timestamp=$(date)" >> $GITHUB_OUTPUT
