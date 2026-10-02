@@ -260,16 +260,19 @@ install_immich_web_server_pnpm () {
     # itself depends on @immich/sdk, so build all three together and let pnpm
     # resolve the order (matches upstream server/Dockerfile). Older tags don't
     # have plugin-sdk, so only add the filter when the package exists.
-    if [ -d packages/plugin-sdk ]; then
+    cd $INSTALL_DIR_src/server
+    if [ -d ../packages/plugin-sdk ]; then
         pnpm --filter @immich/sdk --filter @immich/plugin-sdk --filter immich build
     else
         pnpm --filter immich build
     fi
-    pnpm --filter @immich/sdk --filter immich-web build
     # Build and deploy the server component without optional prebuilt native
     # packages, then compile Sharp in the deployed tree against global libvips.
     pnpm --filter immich --prod --no-optional deploy $INSTALL_DIR_app
     SHARP_FORCE_GLOBAL_LIBVIPS=true pnpm --config.verify-deps-before-run=false --dir $INSTALL_DIR_app/node_modules/sharp exec npm run build
+
+    cd $INSTALL_DIR_src
+    pnpm --filter @immich/sdk --filter immich-web build
 
     # Build and deploy the CLI.
     pnpm --filter @immich/cli --prod --no-optional deploy $INSTALL_DIR_app/cli

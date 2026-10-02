@@ -435,25 +435,38 @@ jobs:
           sudo apt update
           sudo apt install -y python3.11 python3.11-venv python3.11-dev
 
-      - name: Read upstream Node.js version
-        id: node-version
+      - name: Read upstream JavaScript toolchain
+        id: toolchain
         run: |
           NODE_VERSION=$(curl -fsSL "https://raw.githubusercontent.com/immich-app/immich/${VERSION}/.nvmrc" | tr -d '[:space:]')
+          PACKAGE_MANAGER=$(curl -fsSL "https://raw.githubusercontent.com/immich-app/immich/${VERSION}/package.json" | jq -r '.packageManager')
           if [[ ! "$NODE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::Invalid Node.js version for $VERSION: $NODE_VERSION"
             exit 1
           fi
-          echo "version=$NODE_VERSION" >> "$GITHUB_OUTPUT"
-          echo "Using upstream Node.js $NODE_VERSION"
+          if [[ ! "$PACKAGE_MANAGER" =~ ^pnpm@[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid pnpm packageManager for $VERSION: $PACKAGE_MANAGER"
+            exit 1
+          fi
+          PNPM_VERSION="${PACKAGE_MANAGER#pnpm@}"
+          echo "node-version=$NODE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "pnpm-version=$PNPM_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Using upstream Node.js $NODE_VERSION and pnpm $PNPM_VERSION"
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: ${{ steps.node-version.outputs.version }}
+          node-version: ${{ steps.toolchain.outputs.node-version }}
+
+      - name: Set up pnpm
+        run: |
+          npm install -g corepack@latest
+          corepack enable pnpm
+          corepack prepare "pnpm@${{ steps.toolchain.outputs.pnpm-version }}" --activate
+          test "$(pnpm --version)" = "${{ steps.toolchain.outputs.pnpm-version }}"
       
       - name: Install build tools
         run: |
-          npm install -g pnpm@10
           packages=(
             build-essential
             libdav1d-dev
@@ -523,7 +536,6 @@ jobs:
             sudo ln -sf /usr/bin/python3.11 /usr/bin/python3
             sudo -iu immich env "PATH=$PATH" bash -c '
               set -euo pipefail;
-              alias pnpm=/usr/local/bin/pnpm;
               export XDG_CONFIG_HOME=$HOME/.config;
               export POETRY_CONFIG_DIR=$HOME/.config/pypoetry;
               export NVM_DIR=$HOME/.nvm;
@@ -547,13 +559,10 @@ jobs:
               echo "::error::Optional prebuilt Sharp package is present: $OPTIONAL_SHARP";
               exit 1;
             fi;
-            SHARP_ENTRY="$(node -p "require.resolve(\"sharp\")")";
-            SHARP_DIR="$(dirname "$(dirname "$SHARP_ENTRY")")";
-            echo "Sharp package directory: $SHARP_DIR";
-            SHARP_NATIVE="$(find "$SHARP_DIR" -type f -name "*.node" -print -quit)";
+            SHARP_NATIVE="$(find node_modules/.pnpm -type f -path "*/node_modules/sharp/src/build/Release/*.node" -print -quit)";
             if [ -z "$SHARP_NATIVE" ]; then
-              echo "::error::Source-built Sharp native module was not found under $SHARP_DIR";
-              find "$SHARP_DIR" -maxdepth 4 -type f -print;
+              echo "::error::Source-built Sharp native module was not found in the deployed pnpm store";
+              find node_modules/.pnpm -maxdepth 8 -type f -name "*.node" -print;
               exit 1;
             fi;
             echo "Sharp native module: $SHARP_NATIVE";
