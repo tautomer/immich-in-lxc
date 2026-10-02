@@ -435,10 +435,21 @@ jobs:
           sudo apt update
           sudo apt install -y python3.11 python3.11-venv python3.11-dev
 
+      - name: Read upstream Node.js version
+        id: node-version
+        run: |
+          NODE_VERSION=$(curl -fsSL "https://raw.githubusercontent.com/immich-app/immich/${VERSION}/.nvmrc" | tr -d '[:space:]')
+          if [[ ! "$NODE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid Node.js version for $VERSION: $NODE_VERSION"
+            exit 1
+          fi
+          echo "version=$NODE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Using upstream Node.js $NODE_VERSION"
+
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version: ${{ steps.node-version.outputs.version }}
       
       - name: Install build tools
         run: |
@@ -522,7 +533,12 @@ jobs:
               ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3;
               ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3.11;
               test -s /home/immich/app/dist/main.js;
-              grep -Fq "exec node /home/immich/app/dist/main" /home/immich/app/start.sh
+              grep -Fq "exec node /home/immich/app/dist/main" /home/immich/app/start.sh;
+              cd /home/immich/app;
+              test ! -d node_modules/@img/sharp-linux-x64;
+              test ! -d node_modules/@img/sharp-libvips-linux-x64;
+              test -n "$(find node_modules/sharp -type f -name "*.node" -print -quit)";
+              node -e "const sharp=require(\"sharp\"); console.log(sharp.versions)"
             '
             echo "timestamp=$(date)" >> $GITHUB_OUTPUT
 

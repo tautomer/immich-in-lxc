@@ -251,9 +251,9 @@ install_immich_web_server_pnpm () {
 
     rm -r $INSTALL_DIR_app 
     
-    # Install dependencies
+    # Install dependencies. Sharp is rebuilt only after deployment so the
+    # packaged runtime cannot fall back to its optional prebuilt libvips bundle.
     pnpm install --frozen-lockfile
-    npm_config_build_from_source=true pnpm rebuild sharp
 
     # Newer immich releases (3.0+) split out the @immich/plugin-sdk workspace
     # package, which the server imports and must be built first. plugin-sdk
@@ -266,8 +266,10 @@ install_immich_web_server_pnpm () {
         pnpm --filter immich build
     fi
     pnpm --filter @immich/sdk --filter immich-web build
-    # Build and deploy the server component.
-    SHARP_FORCE_GLOBAL_LIBVIPS=true pnpm --filter immich --prod deploy $INSTALL_DIR_app
+    # Build and deploy the server component without optional prebuilt native
+    # packages, then compile Sharp in the deployed tree against global libvips.
+    pnpm --filter immich --prod --no-optional deploy $INSTALL_DIR_app
+    SHARP_FORCE_GLOBAL_LIBVIPS=true pnpm --config.verify-deps-before-run=false --dir $INSTALL_DIR_app/node_modules/sharp exec npm run build
 
     # Build and deploy the CLI.
     pnpm --filter @immich/cli --prod --no-optional deploy $INSTALL_DIR_app/cli
