@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import textwrap
 import unittest
 
 
@@ -257,6 +258,46 @@ class PythonVersionTests(unittest.TestCase):
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_base_image_lookup_validates_api_metadata(self):
+        sha = "a" * 40
+        dockerfile = "FROM ghcr.io/immich-app/base-server-dev:202610131110@sha256:digest AS builder"
+        for filename in ("auto_build_immich.yml", "build_dependencies.yml"):
+            workflow = (ROOT / ".github/workflows" / filename).read_text()
+            step = workflow.split("      - name: Find base-image commit\n", 1)[1].split("      - name: Checkout base-images repo\n", 1)[0]
+            code = textwrap.dedent(step.split("        run: |\n", 1)[1]).replace("${{ github.token }}", "test-token")
+            self.assertIn('Authorization: Bearer', code)
+            self.assertIn('curl -fsSL --retry 3', code)
+            for case, body, ref, curl_exit in (
+                ("valid", dockerfile, '{"object":{"sha":"' + sha + '"}}', "0"),
+                ("empty Dockerfile", '{"message":"API rate limit exceeded"}', '{}', "0"),
+                ("null ref", dockerfile, '{"object":{"sha":null}}', "0"),
+                ("invalid SHA", dockerfile, '{"object":{"sha":"main"}}', "0"),
+                ("HTTP error", dockerfile, '{}', "22"),
+            ):
+                with self.subTest(workflow=filename, response=case), tempfile.TemporaryDirectory(prefix="immich-api-") as directory:
+                    base = Path(directory)
+                    stub = base / "curl"
+                    stub.write_text("""#!/bin/bash
+set -eu
+[ "$CURL_EXIT_CODE" = 0 ] || exit "$CURL_EXIT_CODE"
+case "$*" in
+    */contents/server/Dockerfile*) printf '%s\\n' "$DOCKERFILE" ;;
+    */git/refs/tags/*) printf '%s\\n' "$GIT_REF" ;;
+    *) exit 99 ;;
+esac
+""")
+                    stub.chmod(0o755)
+                    output = base / "github-env"
+                    result = subprocess.run(["bash", "-c", code], env={**os.environ,
+                        "PATH": f"{base}:{os.environ['PATH']}", "VERSION": "v3.3.3", "GITHUB_ENV": str(output),
+                        "DOCKERFILE": body, "GIT_REF": ref, "CURL_EXIT_CODE": curl_exit}, capture_output=True, text=True)
+                    if case == "valid":
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertEqual(output.read_text(), f"base_commit={sha}\n")
+                    else:
+                        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                        self.assertFalse(output.exists())
+
     def test_workflows_use_ubuntu_python_without_global_rewrites(self):
         for filename in ("auto_build_immich.yml", "build_server.yml"):
             with self.subTest(workflow=filename):

@@ -8,6 +8,7 @@ on:
       - 'tests/**'
       - '.github/workflows/auto_build_immich.yml'
       - '.github/workflows/build_server.yml'
+      - '.github/workflows/build_dependencies.yml'
       - '.github/workflows/test-install.yaml'
   pull_request:
     paths:
@@ -16,6 +17,7 @@ on:
       - 'tests/**'
       - '.github/workflows/auto_build_immich.yml'
       - '.github/workflows/build_server.yml'
+      - '.github/workflows/build_dependencies.yml'
       - '.github/workflows/test-install.yaml'
   workflow_dispatch:
 
