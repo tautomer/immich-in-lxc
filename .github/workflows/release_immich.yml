@@ -104,17 +104,10 @@ jobs:
             - Built on: **${{ env.TIMESTAMP }}**
             - Built for: Ubuntu 24.04 LTS with openvino for ML
 
-            **Installation and upgrade instructions**:
-            - These artifacts target **Ubuntu 24.04 x86-64**, **`/home/immich`**, and OpenVINO ML. **Immich <3.3 needs Python 3.11; Immich 3.3+ needs Python >=3.12 and these builds use 3.12.**
-            - For 3.3+, Ubuntu 24.04 already includes Python 3.12; no PPA is needed. Legacy releases need the separately installed Python 3.11 described in the README. Neither path rewrites `/usr/bin/python3` or venv symlinks.
-            - For 3.3+, as root, install venv/build support: `apt update && apt install -y python3.12-venv python3.12-dev stow`.
-            - Back up the database, media, and `runtime.env`, then stop `immich-ml` and `immich-web` before replacing files.
-            - Download `dependencies.tar.gz` and `server.tar.gz` from **this same release**. The archive layouts are `deps/stow/<package>/`, `deps/json/`, `app/`, and `geodata/`.
-            - Follow the [prebuilt installation and upgrade guide](https://github.com/${{ github.repository }}/blob/${{ github.sha }}/README.md#install-or-update-prebuilt-artifacts) for Stow installation, backups, media links, services, verification, and rollback.
-            - If upgrading an old Python 3.11 installation, follow the [Python migration notes](https://github.com/${{ github.repository }}/blob/${{ github.sha }}/README.md#migrating-from-the-old-python-311-workaround). Replace the ML venv; **do not repoint its Python symlinks**.
-            - For 3.3+, ML dependencies are already installed from upstream's frozen uv lock. Older releases retain their Poetry-installed Python 3.11 venv. Do not reinstall dependencies or repoint either packaged venv.
-            - Review installed systemd units and retain your existing `runtime.env`; these files are not included in the server archive. New installations must separately configure PostgreSQL/VectorChord, Redis, FFmpeg, and GPU drivers.
-            - Start and check both services only after extraction and configuration. Keep old app, geodata, and library backups until verification succeeds.
+            **Installation**:
+            - Ubuntu 24.04 x86-64, `/home/immich`, OpenVINO ML.
+            - Python **3.11 for Immich <3.3**; **3.12 for 3.3+** (requires >=3.12).
+            - Back up your data and stop both services. Follow the [prebuilt installation guide](https://github.com/${{ github.repository }}/blob/${{ github.sha }}/README.md#install-or-update-prebuilt-artifacts) using both archives from this release.
 
             **Release details**:  
             This release was created automatically by GitHub Actions. You can track the build process here: [GitHub Actions Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
