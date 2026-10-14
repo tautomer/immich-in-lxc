@@ -656,6 +656,12 @@ download_geonames () {
         echo "geodata exists, skip downloading"
     fi
 
+    # Immich 3.3 resolves country names from GeoNames, including cached installs.
+    if [ ! -s countryInfo.txt ]; then
+        wget -O countryInfo.txt.tmp https://download.geonames.org/export/dump/countryInfo.txt || return
+        mv countryInfo.txt.tmp countryInfo.txt
+    fi
+
     cd $INSTALL_DIR
     # Link the folder
     ln -s $INSTALL_DIR_geo $INSTALL_DIR_app/

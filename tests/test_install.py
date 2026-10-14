@@ -189,6 +189,57 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(self.bind_log.read_text().strip(), "::1\t3010")
 
 
+class GeodataTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="immich-geodata-")
+        self.addCleanup(self.tmp.cleanup)
+        self.base = Path(self.tmp.name)
+        self.geo = self.base / "geodata"
+        self.app = self.base / "app"
+        self.bin = self.base / "bin"
+        for folder in (self.geo, self.app, self.bin):
+            folder.mkdir()
+        for name in ("cities500.zip", "admin1CodesASCII.txt", "admin2Codes.txt", "ne_10m_admin_0_countries.geojson"):
+            (self.geo / name).write_text("cached\n")
+        self.log = self.base / "wget.log"
+        stub = self.bin / "wget"
+        stub.write_text("""#!/bin/bash
+set -eu
+printf '%s\\n' "$*" >> "$COMMAND_LOG"
+[ "${WGET_EXIT_CODE:-0}" = 0 ] || exit "$WGET_EXIT_CODE"
+printf 'US\\tUSA\\t840\\tUS\\tUnited States\\n' > "$2"
+""")
+        stub.chmod(0o755)
+        self.env = {**os.environ, "PATH": f"{self.bin}:{os.environ['PATH']}",
+                    "COMMAND_LOG": str(self.log), "INSTALL_DIR_geo": str(self.geo),
+                    "INSTALL_DIR_app": str(self.app), "INSTALL_DIR": str(self.base)}
+
+    def download(self, **env):
+        return subprocess.run(
+            ["bash", "-c", "set -euo pipefail\n" + installer_function("download_geonames") + "\ndownload_geonames"],
+            env={**self.env, **env}, capture_output=True, text=True,
+        )
+
+    def test_add_country_names_to_cached_geodata(self):
+        result = self.download()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("United States", (self.geo / "countryInfo.txt").read_text())
+        self.assertEqual(self.log.read_text().count("https://"), 1)
+        self.assertIn("https://download.geonames.org/export/dump/countryInfo.txt", self.log.read_text())
+
+    def test_keep_existing_country_names(self):
+        (self.geo / "countryInfo.txt").write_text("existing country names\n")
+        result = self.download()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self.log.exists())
+        self.assertEqual((self.geo / "countryInfo.txt").read_text(), "existing country names\n")
+
+    def test_country_download_failure_is_fatal(self):
+        result = self.download(WGET_EXIT_CODE="7")
+        self.assertEqual(result.returncode, 7, result.stderr)
+        self.assertFalse((self.geo / "countryInfo.txt").exists())
+
+
 class PythonVersionTests(unittest.TestCase):
     def test_release_boundary(self):
         cases = {"v1.135.3": "3.11", "v2.7.5": "3.11", "v3.2.4": "3.11", "v3.3.0-rc.1": "3.12", "v3.3.1": "3.12", "3.3.3": "3.12", "v3.12.0": "3.12", "v4.0.0": "3.12"}
@@ -218,6 +269,8 @@ class WorkflowTests(unittest.TestCase):
                 self.assertNotIn("ln -sf /usr/bin/python", workflow)
                 self.assertNotIn("poetry add", workflow)
                 self.assertIn("Verify machine-learning runtime artifact", workflow)
+                self.assertIn("Verify geodata artifact", workflow)
+                self.assertIn("countryInfo.txt", workflow)
                 build = workflow[workflow.index("      - name: Build immich server"):]
                 self.assertIn("set -euo pipefail", build[:build.index("./install.sh")])
 

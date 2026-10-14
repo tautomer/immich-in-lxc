@@ -573,6 +573,12 @@ jobs:
             fi
           '
 
+      - name: Verify geodata artifact
+        run: |
+          for file in cities500.txt admin1CodesASCII.txt admin2Codes.txt ne_10m_admin_0_countries.geojson countryInfo.txt geodata-date.txt; do
+            test -s "$INSTALL_DIR/geodata/$file"
+          done
+
       - name: Archive app folder
         run: |
           tar -czf server.tar.gz -C $INSTALL_DIR app geodata
