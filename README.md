@@ -2,6 +2,11 @@
 
 [![Build immich on new release](https://github.com/tautomer/immich-in-lxc/actions/workflows/auto_build_immich.yml/badge.svg)](https://github.com/tautomer/immich-in-lxc/actions/workflows/auto_build_immich.yml)
 
+This fork targets Immich **3.3.x**. Builds use **Ubuntu 24.04**, its packaged
+**Python 3.12**, and **uv** for machine-learning dependencies. Existing installs
+using the old Python 3.11 workaround must rebuild or replace their ML venv;
+changing its interpreter symlinks is not a supported upgrade.
+
 A complete guide for installing Immich in LXC, VM, or bare-metal without Docker, but with 
 
 - **CUDA/ROCm support for machine-learning** (if one choose so), 
@@ -83,7 +88,87 @@ First, create a LXC/VM normally. Make sure there is reasonable amount CPU and me
 
 Also, there is no need for a privileged container (which is not recommended in almost all scenarios), if one does not plan to mount a file system, e.g., NFS, SMB, etc., directly inside the LXC container.
 
-This tutorial is tested on `Ubuntu 24.04 LTS` and `Debian 12` LXCs. Things will differ slightly in different distributions, though. Additionally, if one wants to have HW-accelerated ML, it is not recommend to use older release of `Ubuntu`, as it has older version of dependency in its repository, introducing additional complexity, like package pinning.
+The current CI and prebuilt artifacts target **Ubuntu 24.04 LTS, x86-64**.
+Historical Debian 12 instructions below are not a current 3.3.x compatibility
+claim: Debian 12's default Python 3.11 is too old, and Ubuntu-built native
+libraries must not be assumed compatible with Debian. For a source install on
+another distribution, provide a compatible Python interpreter, development
+headers, system libraries, and GPU drivers yourself.
+
+## Python and machine-learning requirements
+
+| Immich release | ML Python/runtime policy |
+| --- | --- |
+| **Earlier than 3.3** (`1.x`, `2.x`, `3.0`–`3.2`) | **Python 3.11**, legacy Poetry install; existing prebuilt venvs must remain on 3.11. |
+| **3.3 and later** | **Python >=3.12**, upstream uv lock; native Ubuntu 24.04 builds and new prebuilt artifacts use **3.12**. Python 3.13 is an optional compatible source-build override. |
+
+Immich 3.3 requires **Python >=3.12**, not strictly greater than 3.12.
+Upstream's v3.3.3 CPU/OpenVINO Docker images use Python 3.13, but the 3.3.x lockfiles also support Python 3.12 and
+include a CPython 3.12 Linux wheel for ONNX Runtime OpenVINO. This repo uses
+Ubuntu 24.04's Python 3.12 to avoid installing another interpreter or replacing
+Ubuntu's system Python.
+
+Run as **root** before a source install:
+
+```bash
+apt update
+apt install -y python3.12-venv python3.12-dev patchelf
+/usr/bin/python3.12 --version
+```
+
+`pre-install.sh` also installs the common venv/build dependencies and `patchelf`.
+`patchelf` clears the executable-stack flag on the OpenVINO extension so it can
+load on newer glibc. It is not needed for the normal CPU wheel.
+
+References: [upstream v3.3.3 ML dependencies](https://github.com/immich-app/immich/blob/v3.3.3/machine-learning/pyproject.toml),
+[upstream lockfile](https://github.com/immich-app/immich/blob/v3.3.3/machine-learning/uv.lock),
+and [the community-script ML fix](https://github.com/community-scripts/ProxmoxVE/pull/17770).
+
+- The native installer uses `python3.12` for Immich 3.3+ and `python3.11`
+  for earlier versions. Set `ML_PYTHON` in `.env` to select another
+  compatible, already-installed interpreter, such as `/usr/bin/python3.13`.
+  The installer does not download Python. This override is for **source builds**,
+  not for swapping the interpreter in a prebuilt venv.
+- New 3.3+ prebuilt artifacts require **`/usr/bin/python3.12`** at runtime. They contain
+  Python 3.12 native extensions and are installed at `/home/immich`.
+- uv installs the selected accelerator extra from the **frozen upstream lock**,
+  including the Git-sourced `immich-model` package and upstream dependency
+  overrides. For 3.3+, do not add the former `numpy<2` or `rapidocr<3.4.2` Poetry pins.
+- All releases before 3.3 retain the legacy Poetry/Python 3.11 installer,
+  even if that upstream tag includes a uv lockfile. The old RapidOCR workaround
+  remains scoped to 3.2/OpenVINO; it is not applied to 3.3+.
+
+### Installing a version earlier than 3.3
+
+For a legacy release, keep **Python 3.11** and select that release in `REPO_TAG`.
+On Ubuntu 24.04, install the separate interpreter as root; do not change
+`/usr/bin/python3` or manually alter venv symlinks:
+
+```bash
+add-apt-repository -y ppa:deadsnakes/ppa
+apt update
+apt install -y python3.11 python3.11-venv python3.11-dev
+```
+
+The installer selects `python3.11` automatically for tags below 3.3, and CI only
+adds this PPA for those legacy builds. Old prebuilt artifacts require
+`/usr/bin/python3.11`. Keep that interpreter for rollback when moving to 3.3+.
+
+### Migrating from the old Python 3.11 workaround
+
+If an earlier workflow or manual setup changed `/usr/bin/python3` to point at
+Python 3.11, restore Ubuntu 24.04's package-managed interpreter as **root**:
+
+```bash
+apt install --reinstall python3-minimal
+/usr/bin/python3 --version       # Should report 3.12 on Ubuntu 24.04
+/usr/bin/python3.12 --version
+```
+
+Do not repoint `venv/bin/python*` to a new Python version. Stop the services,
+back up the existing installation, and follow the source-update or prebuilt
+update procedure below to create a fresh Python 3.12 environment. Keep Python
+3.11 installed until you no longer need the old installation for rollback.
 
 ## Hardware-accelerated machine learning
 
@@ -169,7 +254,7 @@ Then, install the dependency specified by Immich for Intel.
 ./dep-intel.sh
 ```
 
-Finally, after first-time execution of the `install.sh`, which happens at later part of the guide (so safe to skip for now), modify the generated `.env` file.
+Before running `install.sh`, set the following in the installation `.env` file described below. Run `dep-intel.sh` as root; hardware access and driver setup are separate from Python dependency installation.
 
 ```env
 isCUDA=openvino
@@ -219,9 +304,9 @@ usermod -aG video,render immich
 I have make some helper script in this repo, so all one needs to do is clone the repo. We change to the user immich so that the files we cloned will have proper permission. And, just in case one does not know, the commands are as follow.
 
 ```bash
-su immich
+su - immich
 cd ~
-git clone https://github.com/loeeeee/immich-in-lxc.git
+git clone https://github.com/tautomer/immich-in-lxc.git
 ```
 
 Additionally, it is recommend to have our working directory set to the repo's directory.
@@ -240,6 +325,8 @@ Likely because of license issue, many libraries included by distribution package
 Now `exit` the immich user, as the upcoming commands should be run as `root` user.
 
 ```bash
+# As root, from the cloned repository
+cd /home/immich/immich-in-lxc
 ./pre-install.sh
 ```
 
@@ -289,35 +376,41 @@ For more details on the VectorChord migration, see the [official Immich v1.133.0
 
 The star of the show is the install script, i.e. `install.sh` in this repo. It installs or updates the current Immich instance. The Immich instance itself is stateless, thanks to its design. Thus, it is safe to delete the `app` folder that will resides inside `INSTALL_DIR` folder that we are about to config. 
 
-Note: **DO NOT DELETE UPLOAD FOLDER SPECIFIED BY `INSTALL_DIR` IN `.env`**. It stores all the user-uploaded content. 
+Note: **DO NOT DELETE THE UPLOAD FOLDER SPECIFIED BY `UPLOAD_DIR` IN `.env`**. It stores all the user-uploaded content.
 
 Also note: One should always do a snapshot of the media folder during the updating or installation process, just in case something goes horribly wrong.
 
-#### The environment variables
+#### The installation environment
 
-An example .env file that will be generated when no `.env` file is found inside current working directory when executing the script.
-
-Let us go ahead and execute the script as `immich` user (or the user that will be running immich). No worry, when `.env` file is not found, the script will gracefully exit and will not change to the file system.
+Run the source installer as **`immich`**, never as root. From its checkout,
+create and edit `.env` explicitly (or run `./install.sh` once to create it and
+exit without building):
 
 ```bash
-su immich # Or the user who is going to run immich. It should be the same user as the one used for installing Node.js.
-./install.sh
+su - immich
+cd /home/immich/immich-in-lxc
+cp -n install.env .env
+nano .env
 ```
 
-Then, we should have a `.env` file in current directory. 
+| Variable | Purpose |
+| --- | --- |
+| `REPO_TAG` | Exact Immich tag to build, for example `v3.3.3`. Review upstream upgrade notes before changing versions. |
+| `INSTALL_DIR` | Parent of `app`, `source`, `geodata`, and `runtime.env`; defaults to `/home/immich`. Use paths without spaces. |
+| `UPLOAD_DIR` | Persistent media directory. Must not be inside the replaceable `app` directory. |
+| `isCUDA` | `false` = CPU, `true` = CUDA, `openvino` = Intel OpenVINO, `rocm` = ROCm. GPU transcoding is configured separately. |
+| `ML_PYTHON` | Optional source-build interpreter override. Empty selects `python3.12` for 3.3+ or `python3.11` for earlier releases. Install its matching venv/development packages first. |
+| `PROXY_NPM` | Optional npm/pnpm registry mirror; empty uses the normal registry. |
+| `PROXY_NPM_DIST` | Optional Node distribution mirror for nvm/node-gyp. |
+| `PROXY_POETRY` | Historical name retained for compatibility. Sets the uv bootstrap/default index or the legacy Poetry index; empty uses PyPI. Frozen lockfile URLs and the Git dependency still require access to their original hosts. |
 
-- `REPO_TAG` is the version of the Immich that we are going to install,
-- `INSTALL_DIR` is where the `app` and `source` folders will resides in (e.g., it can be a `mnt` point),
-- `UPLOAD_DIR` is where the user uploads goes to  (it can be a `mnt` point), 
-- `isCUDA` when set to true, will install Immich with CUDA supprt. For other GPU Transcodings, this is likely to remain false. (available flag: true, false, openvino, rocm)
-- For user with compromised network accessibility:
-    - `PROXY_NPM` sets the mirror URL that npm will use, if empty, it will use the official one,
-    - :new:`PROXY_NPM_DIST` sets the dist URL that node-gyp will use, if empty, it will use the official one, and
-    - `PROXY_POETRY` sets the mirror URL that poetry will use, if empty, it will use the official one.
+The `immich` user needs read/write access to `INSTALL_DIR` and `UPLOAD_DIR`.
+`.env` configures installation only; `$INSTALL_DIR/runtime.env` configures the
+running services. Existing `.env` files can omit `ML_PYTHON` to use the default.
 
-Note: The `immich` user should have read and write access to both `INSTALL_DIR` and `UPLOAD_DIR`.
-
-Note: :new: means user might need to create the empty entry to make script run.
+CI reads the Node.js and pnpm versions from the selected Immich tag's `.nvmrc`
+and `package.json`. For a source build, use the same toolchain if you have
+installed Node yourself; the installer otherwise bootstraps Node through nvm.
 
 #### Run the script
 
@@ -345,9 +438,11 @@ For Timezones `TZ`, you can consult them in the [TZ Database Wiki](https://en.wi
 
 #### Post install script
 
-The post install script will copy the systemd service files to proper location (and overwrite the original ones), assuming one is using Ubuntu, or something similar. Additionally, it creates a folder for log at `/var/log/`. Both operation requires `sudo/root` privilege, so make sure to review the script before proceeding.
+Run `post-install.sh` as **root** from the repository. It creates the log directory and copies service files only if they do not already exist; it does not overwrite existing units. Review installed units on upgrades, especially their paths and `ExecStart`.
 
 ```bash
+# As root
+cd /home/immich/immich-in-lxc
 ./post-install.sh
 ```
 
@@ -360,7 +455,12 @@ nano /etc/systemd/system/immich-ml.service # Modify WorkingDirectory, Environmen
 nano /etc/systemd/system/immich-web.service # Modify ExecStart with your INSTALL_DIR, in case you changed it.
 ```
 
-After that, we are ready to start our Immich instance!
+The generated ML launcher activates `app/machine-learning/venv` and executes
+`python -m immich_ml`. Upstream owns the Gunicorn options and packaged logging
+configuration. `MACHINE_LEARNING_HOST` and `MACHINE_LEARNING_PORT` in `runtime.env`
+retain the native defaults `127.0.0.1:3003`; worker settings are read by upstream.
+
+After reviewing `runtime.env` and both units, start the services:
 
 ```bash
 systemctl daemon-reload && \
@@ -383,23 +483,168 @@ Because we are install Immich instance in a none docker environment, some DNS lo
 
 Additionally, for LXC with CUDA or other GPU Transcoding support enabled, one needs to go to `Administration > Settings > Video Transcoding Settings > Hardware Acceleration > Acceleration API` and select your GPU Transcoding (e.g., `NVENC` - for CUDA) to explicitly use the GPU to do the transcoding.
 
-## Update the Immich instance
+## Update a source-built instance
 
-The Immich server instance is designed to be stateless, meaning that deleting the instance, i.e. the `INSTALL_DIR/app` folder, (NOT DATABASE OR OTHER STATEFUL THINGS) will not break anything. Thus, to upgrade the current Immich instance, all one needs to do is essentially install the latest Immich.
+Back up the database, persistent media, and `runtime.env` before upgrading, and
+review the selected Immich release's upgrade requirements. Do not jump from an
+old 1.x installation to 3.3 solely because the template now contains a 3.3 tag.
+The older VectorChord migration notes above still apply where relevant.
 
-- **v1.133.0+ Breaking Changes:** If upgrading to v1.133.0 or later, ensure you're upgrading from at least v1.107.2 or later. If you're on an older version, upgrade to v1.107.2 first and ensure Immich starts successfully before continuing.
-
-First thing to do is to stop the old instance.
+If your existing checkout still points to the original `loeeeee` repository,
+`git pull` will not fetch this fork's fixes. Check `git remote -v` and, if you
+want to use this fork, run as `immich` from the checkout:
 
 ```bash
-systemctl stop immich-ml && \
-systemctl stop immich-web
+git remote set-url origin https://github.com/tautomer/immich-in-lxc.git
 ```
 
-After stopping the old instance, update this repo by doing a `git pull` in the folder `immich-in-lxc` (using the `immich` user). 
+1. As **root**, install the Python prerequisites above and stop the services:
 
-Then, the modify `REPO_TAG` value in `.env` file based on the one in `install.env`. 
+   ```bash
+   systemctl stop immich-ml immich-web
+   ```
 
-Finally, run the `install.sh` and it will update Immich, hopefully without problems.
+2. As **`immich`**, keep a copy of the old application for rollback, update this
+   repository, and edit `.env` to select the target `REPO_TAG`. Remove any old
+   `ML_PYTHON` override pointing at Python 3.11. Keep `INSTALL_DIR` and
+   `UPLOAD_DIR` unchanged.
 
-Also, don't forget to start the service again, to load the latest Immich instance.
+   ```bash
+   su - immich
+   cd /home/immich/immich-in-lxc
+   git pull --ff-only
+   cp -a /home/immich/app /home/immich/app.backup-$(date +%Y%m%d-%H%M%S)
+   nano .env
+   ./install.sh
+   ```
+
+   `install.sh` recreates `app`, including the ML venv. It preserves media at
+   `UPLOAD_DIR` and an existing `runtime.env`. Check the command's exit status;
+   a failed install is not a completed update.
+
+3. As **root**, review the installed systemd units and restart:
+
+   ```bash
+   systemctl daemon-reload
+   systemctl reset-failed immich-ml immich-web
+   systemctl start immich-ml immich-web
+   systemctl status immich-ml immich-web
+   ```
+
+## Install or update prebuilt artifacts
+
+This procedure is for an existing **Ubuntu 24.04 x86-64** installation at
+**`/home/immich`**. The tarballs do not provision PostgreSQL/VectorChord, Redis,
+Jellyfin FFmpeg, the `immich` user, GPU drivers, or runtime configuration. New
+installations must set up those prerequisites first. The published ML artifact
+uses OpenVINO, not the source installer's default CPU extra.
+
+Download `dependencies.tar.gz` and `server.tar.gz` from the **same release** in
+[this fork's releases](https://github.com/tautomer/immich-in-lxc/releases). Do not
+mix libraries and server artifacts from different tags. These commands are for
+**3.3+** releases built with the Python 3.12/uv workflow. **For a release earlier
+than 3.3**, install Python 3.11 using the legacy instructions above and use
+`python3.11-venv python3.11-dev` in place of the 3.12 packages below; the Stow,
+extraction, and service steps are otherwise the same. Old artifacts remain
+Python 3.11 artifacts even if their installation instructions are viewed later.
+
+### Root: prepare runtime and dependency libraries
+
+Install Python support, back up your database and configuration, and stop the
+services. No PPA or global Python symlink replacement is necessary:
+
+```bash
+apt update
+apt install -y python3.12-venv python3.12-dev stow
+systemctl stop immich-ml immich-web
+```
+
+If replacing an existing Stow installation, first unstow its packages using
+its **original** Stow directory. For the layout used below:
+
+```bash
+cd /opt/stow/deps/stow
+for package in */; do stow -D -t /usr/local "${package%/}"; done
+```
+
+Skip that block if this is the first Stow installation. If the old libraries
+were built manually, uninstall them from their original build directories
+instead; do not blindly delete files from `/usr/local`.
+
+With the new `dependencies.tar.gz` saved as `/root/dependencies.tar.gz`, keep a
+backup of old packages and extract the new archive without stored ownership:
+
+```bash
+mkdir -p /opt/stow
+cd /opt/stow
+if [ -d deps ]; then mv deps "deps.old-$(date +%Y%m%d-%H%M%S)"; fi
+tar -xzf /root/dependencies.tar.gz --no-same-owner
+cd /opt/stow/deps/stow
+for package in */; do stow -v -t /usr/local "${package%/}"; done
+ldconfig
+```
+
+The archive layout is `deps/stow/<package>/` for libraries and `deps/json/` for
+metadata. Keep both. The server archive already contains `app/build-lock.json`;
+there is no need to copy metadata from a directory that has just been moved.
+
+### Immich user: replace application and geodata
+
+Save the matching `server.tar.gz` in `/home/immich`, then run as **`immich`**:
+
+```bash
+su - immich
+cd /home/immich
+stamp=$(date +%Y%m%d-%H%M%S)
+if [ -d app ]; then mv app "app.old-$stamp"; fi
+if [ -d geodata ]; then mv geodata "geodata.old-$stamp"; fi
+tar -xzf server.tar.gz
+
+# Set this to your existing persistent media directory; never delete it.
+UPLOAD_DIR=/your/existing/upload/path
+ln -sfnT "$UPLOAD_DIR" /home/immich/app/upload
+ln -sfnT "$UPLOAD_DIR" /home/immich/app/machine-learning/upload
+
+# Confirm that the packaged venv uses the required interpreter.
+/home/immich/app/machine-learning/venv/bin/python --version
+```
+
+Do not relocate this venv, change its Python symlinks, or run Poetry over it.
+Keep the existing `/home/immich/runtime.env`; it is not part of the server
+archive. Ensure the services point to `app/start.sh` and
+`app/machine-learning/start.sh`, then use the root restart commands in the
+source-update section. Check both services and ML functionality before removing
+old application, geodata, or dependency backups. Rollback may also require the
+old dependency libraries and a database backup, not just the old `app` folder.
+
+## Verification and troubleshooting
+
+- A `Current Python version ... is not allowed` error means the ML interpreter
+  does not satisfy the selected release. For 3.3, check `ML_PYTHON` and
+  `/usr/bin/python3.12`; do not weaken `requires-python` or repoint an old venv.
+- uv requires access to the lockfile's package hosts and GitHub's `ml-models`
+  repository. A registry mirror does not proxy that Git dependency. Resolve
+  network errors rather than marking an incomplete venv as successfully built.
+- An OpenVINO executable-stack loading error requires `patchelf` and a fresh
+  install with the current script. The workflow verifies ONNX Runtime imports
+  before archiving. GPU passthrough/driver failures are separate concerns.
+- Check `/var/log/immich/ml.log`, `/var/log/immich/web.log`, and
+  `journalctl -u immich-ml -u immich-web` after deployment. A successful compile
+  does not prove that a service, database migration, or GPU is working.
+
+For contributors, local regression tests require only Python and Bash:
+
+```bash
+bash -n install.sh pre-install.sh python-version.sh
+python3 -m unittest discover -s tests -v
+```
+
+The installer-test workflow additionally installs and imports the real CPU and
+OpenVINO ML dependencies on Ubuntu 24.04. The full build verifies both Sharp and
+ML runtime artifacts before publishing. After your branch is available on
+GitHub, validate a full build without publishing a release:
+
+```bash
+gh workflow run auto_build_immich.yml --ref YOUR_BRANCH \
+  -f version=v3.3.3 -f action=force-rebuild-all -f skip_release=true
+```

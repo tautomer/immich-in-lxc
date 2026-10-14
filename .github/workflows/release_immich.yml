@@ -104,51 +104,17 @@ jobs:
             - Built on: **${{ env.TIMESTAMP }}**
             - Built for: Ubuntu 24.04 LTS with openvino for ML
 
-            **How to install**:  
-            - Follow the setup steps in the README up to (but not including) `pre-install.sh`.
-            - Install Python 3.11 as `onnxruntime-openvino=1.18.0` was not built for Python 3.12.
-              ```shell
-              add-apt-repository ppa:deadsnakes/ppa
-              apt update
-              # venv and header files are needed as well
-              apt install python3.11 python3.11-venv python3.11-dev
-              ```
-            - Stop the `immich-ml` and `immich-web` services: `systemctl stop immich-ml immich-web`.
-            - Download `dependencies.tar.gz` into the home folder of your LXC's root user.
-            - To update the dependency libraries
-              - If you have installed dependencies with `pre-install.sh`, you must first uninstall them. Navigate to each library's source folder (e.g., `/root/immich-in-lxc/image-source/libheif`) and run the uninstall command.
-              - Extract `tar -xf dependencies.tar.gz --no-same-owner`.
-              - Create the shared /opt/deps directory if it doesn't already exist and move your extracted files into it. This location ensures the libraries are accessible to all users.
-                ```shell
-                mkdir -p /opt/stow
-                mv $HOME/deps /opt/stow
-                ```
-              - Install with Stow
-                ```shell
-                apt install stow
-                cd /opt/stow
-                for lib in $(ls -d */); do
-                  stow -v -t /usr/local $lib
-                done
-                ```
-              - Copy build lock file
-                ```shell
-                cp ${HOME}/deps/json/build-lock.json /opt/stow/
-                ```
-              - Remove the tarball and extracted folder with
-                ```shell
-                rm -rf ~/deps ~/dependencies.tar.gz
-                ```
-            - Switch to the immich user: `su - immich`.
-            - Download `server.tar.gz` into the home folder.
-            - Remove `/home/immich/app` and `/home/immich/geodata` folders. For safety, you can rename them first: `mv /home/immich/app /home/immich/app.old` and `mv /home/immich/geodata /home/immich/geodata.old`.
-            - Extract the server tarball: `tar -xf server.tar.gz`.
-            - Ensure that the `app/upload` directory is linked correctly: `ln -sf /your/upload/path /home/immich/app/upload`.
-            - If necessary, manually update runtime.env or run `./post-install.sh` to install/update systemd services. Since these files generally do not change with respect to immich updates, they are not included in the tarball.
-            - Restart `immich-ml` and `immich-web` services.
-            - Verify that all services are running correctly: `systemctl status immich-ml immich-web`.
-            - If everything is working, you can remove the old app and geodata folders: `rm -rf /home/immich/app.old /home/immich/geodata.old`.
-            - If you encounter issues, you can restore the old folders: `mv /home/immich/app.old /home/immich/app` and `mv /home/immich/geodata.old /home/immich/geodata`. 
+            **Installation and upgrade instructions**:
+            - These artifacts target **Ubuntu 24.04 x86-64**, **`/home/immich`**, and OpenVINO ML. **Immich <3.3 needs Python 3.11; Immich 3.3+ needs Python >=3.12 and these builds use 3.12.**
+            - For 3.3+, Ubuntu 24.04 already includes Python 3.12; no PPA is needed. Legacy releases need the separately installed Python 3.11 described in the README. Neither path rewrites `/usr/bin/python3` or venv symlinks.
+            - For 3.3+, as root, install venv/build support: `apt update && apt install -y python3.12-venv python3.12-dev stow`.
+            - Back up the database, media, and `runtime.env`, then stop `immich-ml` and `immich-web` before replacing files.
+            - Download `dependencies.tar.gz` and `server.tar.gz` from **this same release**. The archive layouts are `deps/stow/<package>/`, `deps/json/`, `app/`, and `geodata/`.
+            - Follow the [prebuilt installation and upgrade guide](https://github.com/${{ github.repository }}/blob/${{ github.sha }}/README.md#install-or-update-prebuilt-artifacts) for Stow installation, backups, media links, services, verification, and rollback.
+            - If upgrading an old Python 3.11 installation, follow the [Python migration notes](https://github.com/${{ github.repository }}/blob/${{ github.sha }}/README.md#migrating-from-the-old-python-311-workaround). Replace the ML venv; **do not repoint its Python symlinks**.
+            - For 3.3+, ML dependencies are already installed from upstream's frozen uv lock. Older releases retain their Poetry-installed Python 3.11 venv. Do not reinstall dependencies or repoint either packaged venv.
+            - Review installed systemd units and retain your existing `runtime.env`; these files are not included in the server archive. New installations must separately configure PostgreSQL/VectorChord, Redis, FFmpeg, and GPU drivers.
+            - Start and check both services only after extraction and configuration. Keep old app, geodata, and library backups until verification succeeds.
 
             **Release details**:  
             This release was created automatically by GitHub Actions. You can track the build process here: [GitHub Actions Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
