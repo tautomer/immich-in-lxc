@@ -21,7 +21,7 @@ on:
 
 jobs:
   Build-dependencies:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: 'Automated Run: Download parameters artifact'
@@ -59,25 +59,30 @@ jobs:
       - name: Find base-image commit
         id: find_commit
         run: |
-          IMMICH_VERSION=${{ github.event.inputs.version }}
-          # get the Dockerfile content from GitHub API and parse the base image tag
-          BASE_IMAGE_TAG=$(curl -sL \
+          set -euo pipefail
+          IMMICH_VERSION=$VERSION
+          BASE_IMAGE_TAG=$(curl -fsSL --retry 3 \
+            -H "Authorization: Bearer ${{ github.token }}" \
             -H "Accept: application/vnd.github.v3.raw" \
             "https://api.github.com/repos/immich-app/immich/contents/server/Dockerfile?ref=${IMMICH_VERSION}" | \
             grep 'FROM ghcr.io/immich-app/base-server-dev:' | \
             awk -F'[:@]' '{print $2}')
-
+          if [[ ! "$BASE_IMAGE_TAG" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+            echo "::error::Invalid base image tag for $IMMICH_VERSION: $BASE_IMAGE_TAG"
+            exit 1
+          fi
           echo "Found base image tag: $BASE_IMAGE_TAG"
 
-          # use the GitHub Releases API to find the commit SHA for that tag
-          COMMIT_SHA=$(curl -sL \
+          COMMIT_SHA=$(curl -fsSL --retry 3 \
+            -H "Authorization: Bearer ${{ github.token }}" \
             -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/immich-app/base-images/releases/tags/$BASE_IMAGE_TAG" | \
-            jq -r '.target_commitish')
-
+            "https://api.github.com/repos/immich-app/base-images/git/refs/tags/$BASE_IMAGE_TAG" | \
+            jq -er '.object.sha')
+          if [[ ! "$COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Invalid base image commit for $BASE_IMAGE_TAG: $COMMIT_SHA"
+            exit 1
+          fi
           echo "Found commit SHA: $COMMIT_SHA"
-
-          # set the output for subsequent steps to use
           echo "base_commit=${COMMIT_SHA}" >> "$GITHUB_ENV"
 
       - name: Checkout base-images repo

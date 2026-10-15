@@ -19,7 +19,7 @@ on:
 
 jobs:
   Build-immich:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: 'Automated Run: Prepare environment'
@@ -87,29 +87,54 @@ jobs:
           sudo touch /usr/bin/ffprobe
           sudo chmod +x /usr/bin/ffprobe
 
-      - name: Install Python 3.11
+      - name: Install version-specific Python support
         run: |
-          # install Python 3.11
-          # before onnxruntime-openvino is bumped, we can only use Python 3.11
-          sudo add-apt-repository -y ppa:deadsnakes/ppa
+          PYTHON_VERSION=$(bash python-version.sh "$VERSION")
+          echo "ML_PYTHON_VERSION=$PYTHON_VERSION" >> "$GITHUB_ENV"
+          # Ubuntu 24.04 provides 3.12. Only pre-3.3 builds need the 3.11 PPA.
+          if [ "$PYTHON_VERSION" = 3.11 ]; then
+            sudo add-apt-repository -y ppa:deadsnakes/ppa
+          fi
           sudo apt update
-          sudo apt install -y python3.11 python3.11-venv python3.11-dev
+          sudo apt install -y "python$PYTHON_VERSION" "python$PYTHON_VERSION-venv" "python$PYTHON_VERSION-dev"
 
-      # this is global install which works for all users
+      - name: Read upstream JavaScript toolchain
+        id: toolchain
+        run: |
+          NODE_VERSION=$(curl -fsSL "https://raw.githubusercontent.com/immich-app/immich/${VERSION}/.nvmrc" | tr -d '[:space:]')
+          PACKAGE_MANAGER=$(curl -fsSL "https://raw.githubusercontent.com/immich-app/immich/${VERSION}/package.json" | jq -r '.packageManager')
+          if [[ ! "$NODE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid Node.js version for $VERSION: $NODE_VERSION"
+            exit 1
+          fi
+          if [[ ! "$PACKAGE_MANAGER" =~ ^pnpm@[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid pnpm packageManager for $VERSION: $PACKAGE_MANAGER"
+            exit 1
+          fi
+          PNPM_VERSION="${PACKAGE_MANAGER#pnpm@}"
+          echo "node-version=$NODE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "pnpm-version=$PNPM_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Using upstream Node.js $NODE_VERSION and pnpm $PNPM_VERSION"
+
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: ${{ steps.toolchain.outputs.node-version }}
+
+      - name: Set up pnpm
+        run: |
+          npm install -g corepack@latest
+          corepack enable pnpm
+          corepack prepare "pnpm@${{ steps.toolchain.outputs.pnpm-version }}" --activate
+          test "$(pnpm --version)" = "${{ steps.toolchain.outputs.pnpm-version }}"
       
       - name: Install build tools
         run: |
-          sudo apt install -yqq build-essential
-          npm install -g pnpm@10
+          sudo apt install -yqq build-essential patchelf
 
       - name: Modify the installation script
         run: |
           # cp install.sh install.sh.old
-          sed -i "/poetry install --no-root --extras openvino/i\ \ \ \ \ \ \ \ poetry add 'numpy<2'\n\ \ \ \ \ \ \ \ poetry update --lock" install.sh
           # sed -i "s/# install_sharp_and_cli/install_sharp_and_cli_pnpm/g" install.sh
           sed -i "s/^generate_build_lock[[:space:]]*\$/cp \$SCRIPT_DIR\/build-lock.json \$INSTALL_DIR_app/" install.sh
           # debugging output
@@ -141,20 +166,32 @@ jobs:
       - name: Build immich server
         id: build
         run: |
-            # overwrite the default Python version
-            sudo ln -sf /usr/bin/python3.11 /usr/bin/python3
-            sudo -iu immich env "PATH=$PATH" bash -c '
-              alias pnpm=/usr/local/bin/pnpm;
+            sudo -iu immich env "PATH=$PATH" "ML_PYTHON=/usr/bin/python$ML_PYTHON_VERSION" bash -c '
+              set -euo pipefail;
               export XDG_CONFIG_HOME=$HOME/.config;
-              export POETRY_CONFIG_DIR=$HOME/.config/pypoetry;
               export NVM_DIR=$HOME/.nvm;
               cd /home/immich/immich-in-lxc;
-              ./install.sh;
-              ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python;
-              ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3;
-              ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3.11
+              ./install.sh
             '
             echo "timestamp=$(date)" >> $GITHUB_OUTPUT
+
+      - name: Verify machine-learning runtime artifact
+        run: |
+          sudo -iu immich bash -c '
+            set -euo pipefail;
+            cd /home/immich/app/machine-learning;
+            . venv/bin/activate;
+            python -c "import immich_ml.main, onnxruntime; print(onnxruntime.get_available_providers())";
+            if [ -f immich_ml/gunicorn_conf.py ]; then
+              python -m gunicorn --check-config -c immich_ml/gunicorn_conf.py immich_ml.main:app;
+            fi
+          '
+
+      - name: Verify geodata artifact
+        run: |
+          for file in cities500.txt admin1CodesASCII.txt admin2Codes.txt ne_10m_admin_0_countries.geojson countryInfo.txt geodata-date.txt; do
+            test -s "$INSTALL_DIR/geodata/$file"
+          done
 
       - name: Archive app folder
         run: |

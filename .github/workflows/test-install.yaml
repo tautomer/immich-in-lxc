@@ -1,0 +1,73 @@
+name: Test Immich installer
+
+on:
+  push:
+    paths:
+      - 'install.sh'
+      - 'python-version.sh'
+      - 'tests/**'
+      - '.github/workflows/auto_build_immich.yml'
+      - '.github/workflows/build_server.yml'
+      - '.github/workflows/build_dependencies.yml'
+      - '.github/workflows/test-install.yaml'
+  pull_request:
+    paths:
+      - 'install.sh'
+      - 'python-version.sh'
+      - 'tests/**'
+      - '.github/workflows/auto_build_immich.yml'
+      - '.github/workflows/build_server.yml'
+      - '.github/workflows/build_dependencies.yml'
+      - '.github/workflows/test-install.yaml'
+  workflow_dispatch:
+
+jobs:
+  test-install:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check shell syntax
+        run: bash -n install.sh pre-install.sh python-version.sh
+      - name: Test machine-learning installation and launchers
+        run: python3 -m unittest discover -s tests -v
+
+  test-machine-learning:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ['v3.3.1', 'v3.3.3']
+        extra: [cpu, openvino]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out pinned upstream ML source
+        uses: actions/checkout@v4
+        with:
+          repository: immich-app/immich
+          ref: ${{ matrix.version }}
+          path: upstream
+          sparse-checkout: machine-learning
+          persist-credentials: false
+      - name: Install Python venv support
+        run: |
+          sudo apt update
+          sudo apt install -y python3.12-venv patchelf
+      - name: Install and verify machine-learning runtime
+        env:
+          SCRIPT_DIR: ${{ github.workspace }}
+          REPO_TAG: ${{ matrix.version }}
+          INSTALL_DIR_src: ${{ github.workspace }}/upstream
+          INSTALL_DIR_ml: ${{ runner.temp }}/immich-ml
+          ML_PYTHON: /usr/bin/python3.12
+          isCUDA: ${{ matrix.extra }}
+          PROXY_POETRY: ''
+        run: |
+          set -euo pipefail
+          mkdir -p "$INSTALL_DIR_ml"
+          sed -n '/^install_immich_machine_learning () {/,/^}/p' install.sh > "$RUNNER_TEMP/install-ml.sh"
+          . "$RUNNER_TEMP/install-ml.sh"
+          install_immich_machine_learning
+          cd "$INSTALL_DIR_ml"
+          . venv/bin/activate
+          python -c 'import immich_model, immich_ml.main, onnxruntime; print(onnxruntime.get_available_providers())'
+          python -m gunicorn --check-config -c immich_ml/gunicorn_conf.py immich_ml.main:app

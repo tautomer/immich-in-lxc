@@ -83,7 +83,34 @@ First, create a LXC/VM normally. Make sure there is reasonable amount CPU and me
 
 Also, there is no need for a privileged container (which is not recommended in almost all scenarios), if one does not plan to mount a file system, e.g., NFS, SMB, etc., directly inside the LXC container.
 
-This tutorial is tested on `Ubuntu 24.04 LTS` and `Debian 12` LXCs. Things will differ slightly in different distributions, though. Additionally, if one wants to have HW-accelerated ML, it is not recommend to use older release of `Ubuntu`, as it has older version of dependency in its repository, introducing additional complexity, like package pinning.
+CI and prebuilt artifacts target **Ubuntu 24.04 LTS, x86-64**. Other distributions
+require a source build with compatible Python and system libraries.
+
+## Python requirements
+
+| Immich | ML Python |
+| --- | --- |
+| <3.3 | **3.11** |
+| 3.3+ | **>=3.12**; defaults to Ubuntu 24.04's **3.12** |
+
+Immich 3.3+ uses uv; earlier releases use Poetry. As **root** on Ubuntu 24.04:
+
+```bash
+apt update
+apt install -y python3.12-venv python3.12-dev patchelf
+```
+
+For **Immich <3.3**, install Python 3.11 instead:
+
+```bash
+add-apt-repository -y ppa:deadsnakes/ppa
+apt update
+apt install -y python3.11 python3.11-venv python3.11-dev
+```
+
+Do not change system or venv Python symlinks. Upgrading from 3.11 requires a
+fresh application/venv. If the old workaround changed `/usr/bin/python3`, restore
+it with `apt install --reinstall python3-minimal`.
 
 ## Hardware-accelerated machine learning
 
@@ -169,7 +196,7 @@ Then, install the dependency specified by Immich for Intel.
 ./dep-intel.sh
 ```
 
-Finally, after first-time execution of the `install.sh`, which happens at later part of the guide (so safe to skip for now), modify the generated `.env` file.
+Before running `install.sh`, set the following in the installation `.env` file described below. Run `dep-intel.sh` as root; hardware access and driver setup are separate from Python dependency installation.
 
 ```env
 isCUDA=openvino
@@ -219,9 +246,9 @@ usermod -aG video,render immich
 I have make some helper script in this repo, so all one needs to do is clone the repo. We change to the user immich so that the files we cloned will have proper permission. And, just in case one does not know, the commands are as follow.
 
 ```bash
-su immich
+su - immich
 cd ~
-git clone https://github.com/loeeeee/immich-in-lxc.git
+git clone https://github.com/tautomer/immich-in-lxc.git
 ```
 
 Additionally, it is recommend to have our working directory set to the repo's directory.
@@ -240,6 +267,8 @@ Likely because of license issue, many libraries included by distribution package
 Now `exit` the immich user, as the upcoming commands should be run as `root` user.
 
 ```bash
+# As root, from the cloned repository
+cd /home/immich/immich-in-lxc
 ./pre-install.sh
 ```
 
@@ -289,35 +318,34 @@ For more details on the VectorChord migration, see the [official Immich v1.133.0
 
 The star of the show is the install script, i.e. `install.sh` in this repo. It installs or updates the current Immich instance. The Immich instance itself is stateless, thanks to its design. Thus, it is safe to delete the `app` folder that will resides inside `INSTALL_DIR` folder that we are about to config. 
 
-Note: **DO NOT DELETE UPLOAD FOLDER SPECIFIED BY `INSTALL_DIR` IN `.env`**. It stores all the user-uploaded content. 
+Note: **DO NOT DELETE THE UPLOAD FOLDER SPECIFIED BY `UPLOAD_DIR` IN `.env`**. It stores all the user-uploaded content.
 
 Also note: One should always do a snapshot of the media folder during the updating or installation process, just in case something goes horribly wrong.
 
-#### The environment variables
+#### The installation environment
 
-An example .env file that will be generated when no `.env` file is found inside current working directory when executing the script.
-
-Let us go ahead and execute the script as `immich` user (or the user that will be running immich). No worry, when `.env` file is not found, the script will gracefully exit and will not change to the file system.
+As **`immich`**, create and edit `.env` in the checkout:
 
 ```bash
-su immich # Or the user who is going to run immich. It should be the same user as the one used for installing Node.js.
-./install.sh
+su - immich
+cd /home/immich/immich-in-lxc
+cp -n install.env .env
+nano .env
 ```
 
-Then, we should have a `.env` file in current directory. 
+| Variable | Purpose |
+| --- | --- |
+| `REPO_TAG` | Exact Immich release tag to build. |
+| `INSTALL_DIR` | Installation directory; defaults to `/home/immich`. Use paths without spaces. |
+| `UPLOAD_DIR` | Persistent media directory, outside `app`. |
+| `isCUDA` | `false` (CPU), `true` (CUDA), `openvino`, or `rocm`. |
+| `ML_PYTHON` | Optional source-build interpreter override; defaults follow the Python table above. |
+| `PROXY_NPM` | Optional npm/pnpm registry mirror. |
+| `PROXY_NPM_DIST` | Optional Node distribution mirror. |
+| `PROXY_POETRY` | Optional Python package index for uv/Poetry. |
 
-- `REPO_TAG` is the version of the Immich that we are going to install,
-- `INSTALL_DIR` is where the `app` and `source` folders will resides in (e.g., it can be a `mnt` point),
-- `UPLOAD_DIR` is where the user uploads goes to  (it can be a `mnt` point), 
-- `isCUDA` when set to true, will install Immich with CUDA supprt. For other GPU Transcodings, this is likely to remain false. (available flag: true, false, openvino, rocm)
-- For user with compromised network accessibility:
-    - `PROXY_NPM` sets the mirror URL that npm will use, if empty, it will use the official one,
-    - :new:`PROXY_NPM_DIST` sets the dist URL that node-gyp will use, if empty, it will use the official one, and
-    - `PROXY_POETRY` sets the mirror URL that poetry will use, if empty, it will use the official one.
-
-Note: The `immich` user should have read and write access to both `INSTALL_DIR` and `UPLOAD_DIR`.
-
-Note: :new: means user might need to create the empty entry to make script run.
+The `immich` user needs read/write access to `INSTALL_DIR` and `UPLOAD_DIR`.
+`.env` controls installation; `$INSTALL_DIR/runtime.env` controls the services.
 
 #### Run the script
 
@@ -345,9 +373,11 @@ For Timezones `TZ`, you can consult them in the [TZ Database Wiki](https://en.wi
 
 #### Post install script
 
-The post install script will copy the systemd service files to proper location (and overwrite the original ones), assuming one is using Ubuntu, or something similar. Additionally, it creates a folder for log at `/var/log/`. Both operation requires `sudo/root` privilege, so make sure to review the script before proceeding.
+Run `post-install.sh` as **root** from the repository. It creates the log directory and copies service files only if they do not already exist; it does not overwrite existing units. Review installed units on upgrades, especially their paths and `ExecStart`.
 
 ```bash
+# As root
+cd /home/immich/immich-in-lxc
 ./post-install.sh
 ```
 
@@ -360,7 +390,7 @@ nano /etc/systemd/system/immich-ml.service # Modify WorkingDirectory, Environmen
 nano /etc/systemd/system/immich-web.service # Modify ExecStart with your INSTALL_DIR, in case you changed it.
 ```
 
-After that, we are ready to start our Immich instance!
+After reviewing `runtime.env` and both units, start the services:
 
 ```bash
 systemctl daemon-reload && \
@@ -383,23 +413,68 @@ Because we are install Immich instance in a none docker environment, some DNS lo
 
 Additionally, for LXC with CUDA or other GPU Transcoding support enabled, one needs to go to `Administration > Settings > Video Transcoding Settings > Hardware Acceleration > Acceleration API` and select your GPU Transcoding (e.g., `NVENC` - for CUDA) to explicitly use the GPU to do the transcoding.
 
-## Update the Immich instance
+## Update a source-built instance
 
-The Immich server instance is designed to be stateless, meaning that deleting the instance, i.e. the `INSTALL_DIR/app` folder, (NOT DATABASE OR OTHER STATEFUL THINGS) will not break anything. Thus, to upgrade the current Immich instance, all one needs to do is essentially install the latest Immich.
-
-- **v1.133.0+ Breaking Changes:** If upgrading to v1.133.0 or later, ensure you're upgrading from at least v1.107.2 or later. If you're on an older version, upgrade to v1.107.2 first and ensure Immich starts successfully before continuing.
-
-First thing to do is to stop the old instance.
+Back up your database, media, application, and configuration. Review upstream upgrade
+requirements. As **root**, install the required Python above and stop the services:
 
 ```bash
-systemctl stop immich-ml && \
-systemctl stop immich-web
+systemctl stop immich-ml immich-web
 ```
 
-After stopping the old instance, update this repo by doing a `git pull` in the folder `immich-in-lxc` (using the `immich` user). 
+As **`immich`**, update this fork's checkout, set `REPO_TAG` in `.env`, and rebuild:
 
-Then, the modify `REPO_TAG` value in `.env` file based on the one in `install.env`. 
+```bash
+cd /home/immich/immich-in-lxc
+git pull --ff-only
+nano .env
+./install.sh
+```
 
-Finally, run the `install.sh` and it will update Immich, hopefully without problems.
+The installer replaces `app`, including the ML venv, but preserves `UPLOAD_DIR`
+and an existing `runtime.env`. Remove any obsolete Python 3.11 override for 3.3+.
+After a successful install, restart and check both services as root:
 
-Also, don't forget to start the service again, to load the latest Immich instance.
+```bash
+systemctl restart immich-ml immich-web
+systemctl status immich-ml immich-web
+```
+
+## Install or update prebuilt artifacts
+
+For **Ubuntu 24.04 x86-64**, installed at **`/home/immich`**, with OpenVINO ML.
+The database, Redis, FFmpeg, GPU drivers, and runtime configuration must already
+be set up. Install the matching Python from the table above and `stow`.
+
+1. Back up your database, media, and configuration. Stop both services as root.
+2. Download both archives from the **same release** in
+   [this fork's releases](https://github.com/tautomer/immich-in-lxc/releases).
+3. As **root**, unstow/uninstall old dependency libraries first. Back up any
+   existing `/opt/stow/deps`, then install the new libraries:
+
+   ```bash
+   apt install -y stow
+   mkdir -p /opt/stow
+   if [ -d /opt/stow/deps ]; then mv /opt/stow/deps "/opt/stow/deps.old-$(date +%s)"; fi
+   tar -xzf /root/dependencies.tar.gz --no-same-owner -C /opt/stow
+   cd /opt/stow/deps/stow
+   for package in */; do stow -v -t /usr/local "${package%/}"; done
+   ldconfig
+   ```
+
+4. As **`immich`**, with `server.tar.gz` in `/home/immich`, replace the application:
+
+   ```bash
+   cd /home/immich
+   stamp=$(date +%Y%m%d-%H%M%S)
+   if [ -d app ]; then mv app "app.old-$stamp"; fi
+   if [ -d geodata ]; then mv geodata "geodata.old-$stamp"; fi
+   tar -xzf server.tar.gz
+   UPLOAD_DIR=/your/existing/upload/path
+   ln -sfnT "$UPLOAD_DIR" app/upload
+   ln -sfnT "$UPLOAD_DIR" app/machine-learning/upload
+   ```
+
+5. Keep your existing `runtime.env` and review the installed service paths.
+   As **root**, restart and check `immich-ml` and `immich-web`. Keep backups until
+   both work. Do not change the packaged venv's Python interpreter.

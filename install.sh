@@ -464,61 +464,92 @@ generate_build_lock
 # -------------------
 
 install_immich_machine_learning () {
-    cd $INSTALL_DIR_src/machine-learning
-    python3 -m venv $INSTALL_DIR_ml/venv
+    cd "$INSTALL_DIR_src/machine-learning"
+
+    # Preserve the legacy 3.11 runtime before Immich 3.3. For 3.3+, use
+    # Ubuntu 24.04's 3.12 and upstream uv sources, without system symlink edits.
+    local ml_python_version
+    ml_python_version=$(bash "$SCRIPT_DIR/python-version.sh" "$REPO_TAG")
+    ML_PYTHON=${ML_PYTHON:-python$ml_python_version}
+    if [ "$ml_python_version" = 3.12 ] && [ ! -f uv.lock ]; then
+        echo "ERROR: Immich $REPO_TAG requires its upstream ML uv.lock."
+        exit 1
+    fi
+    if ! command -v "$ML_PYTHON" &> /dev/null; then
+        echo "ERROR: $ML_PYTHON is not installed (including its venv module)."
+        exit 1
+    fi
+    "$ML_PYTHON" -m venv "$INSTALL_DIR_ml/venv"
     (
-    # Initiate subshell to setup venv
-    . $INSTALL_DIR_ml/venv/bin/activate
+    . "$INSTALL_DIR_ml/venv/bin/activate"
 
-    # Use pypi if proxy does not present
-    if [ -z "${PROXY_POETRY}" ]; then
-        PROXY_POETRY=https://pypi.org/simple/  
-    fi
-    pip3 install poetry -i $PROXY_POETRY
+    if [ "$ml_python_version" = 3.12 ]; then
+        # Use the same uv version as the upstream ML Dockerfile. Keep the
+        # upstream lock and source overrides rather than resolving in Poetry.
+        python -m pip install 'uv==0.8.15' -i "${PROXY_POETRY:-https://pypi.org/simple/}"
+        case "$isCUDA" in
+            true) ml_extra=cuda ;;
+            openvino|rocm) ml_extra=$isCUDA ;;
+            *) ml_extra=cpu ;;
+        esac
+        uv sync --frozen --active --python "$VIRTUAL_ENV/bin/python" \
+            --no-dev --no-editable --no-install-project --link-mode copy --no-python-downloads \
+            --extra "$ml_extra" \
+            --default-index "${PROXY_POETRY:-https://pypi.org/simple/}"
 
-    # Set PROXY_POETRY as the primary source to download package from
-    # https://python-poetry.org/docs/repositories/#primary-package-sources
-    if [ ! -z "${PROXY_POETRY}" ]; then
-        # langsam literally means slow
-        poetry source add --priority=primary langsam $PROXY_POETRY
-    fi
-
-    # Deal with python 3.12
-    python3_version=$(python3 --version 2>&1 | awk -F' ' '{print $2}' | awk -F'.' '{print $2}')
-    if [ $python3_version = 12 ]; then
-        # Allow Python 3.12 (e.g., Ubuntu 24.04)
-        sed -i -e 's/<3.12/<4/g' pyproject.toml
-        poetry update
-    fi
-    
-    # Install CUDA parts only when necessary
-    if [ $isCUDA = true ]; then
-        poetry install --no-root --extras cuda
-    elif [ $isCUDA = "openvino" ]; then
-        poetry install --no-root --extras openvino
-    elif [ $isCUDA = "rocm" ]; then
-        # https://rocm.docs.amd.com/projects/radeon/en/latest/docs/install/native_linux/install-onnx.html
-        pip3 install onnxruntime-rocm -f https://repo.radeon.com/rocm/manylinux/rocm-rel-6.4.1/
-        # Verify installation
-        python3 -c "import onnxruntime as ort; print(ort.get_available_providers())"
-        # ROCm needs numpy < 2 [workaround](https://rocm.docs.amd.com/projects/radeon/en/latest/docs/install/native_linux/install-onnx.html)
-        pip install "numpy<2" -i $PROXY_POETRY
+        # Published OpenVINO wheels may mark this extension's stack executable,
+        # which newer glibc refuses to load (also fixed by community-scripts).
+        if [ "$ml_extra" = openvino ]; then
+            find "$VIRTUAL_ENV" -name 'onnxruntime_pybind11_state*.so' \
+                -exec patchelf --clear-execstack {} +
+        fi
     else
-        poetry install --no-root --extras cpu
-    fi
+        # Use pypi if proxy does not present
+        if [ -z "${PROXY_POETRY}" ]; then
+            PROXY_POETRY=https://pypi.org/simple/
+        fi
+        pip3 install poetry -i $PROXY_POETRY
 
-    # Reset the settings
-    if [ ! -z "${PROXY_POETRY}" ]; then
-        # Remove the source
-        # https://python-poetry.org/docs/cli/#source-remove
-        poetry source remove langsam
-    fi
+        # Set PROXY_POETRY as the primary source to download package from
+        # https://python-poetry.org/docs/repositories/#primary-package-sources
+        if [ ! -z "${PROXY_POETRY}" ]; then
+            # langsam literally means slow
+            poetry source add --priority=primary langsam $PROXY_POETRY
+        fi
 
+        # Install CUDA parts only when necessary
+        if [ $isCUDA = true ]; then
+            poetry install --no-root --extras cuda
+        elif [ $isCUDA = "openvino" ]; then
+            # Retain the 3.2 OpenVINO workaround only on the legacy path.
+            if [[ "${REPO_TAG#v}" = 3.2.* ]]; then
+                poetry add 'rapidocr<3.4.2'
+                poetry update --lock
+            fi
+            poetry install --no-root --extras openvino
+        elif [ $isCUDA = "rocm" ]; then
+            # https://rocm.docs.amd.com/projects/radeon/en/latest/docs/install/native_linux/install-onnx.html
+            pip3 install onnxruntime-rocm -f https://repo.radeon.com/rocm/manylinux/rocm-rel-6.4.1/
+            # Verify installation
+            python3 -c "import onnxruntime as ort; print(ort.get_available_providers())"
+            # ROCm needs numpy < 2 [workaround](https://rocm.docs.amd.com/projects/radeon/en/latest/docs/install/native_linux/install-onnx.html)
+            pip install "numpy<2" -i $PROXY_POETRY
+        else
+            poetry install --no-root --extras cpu
+        fi
+
+        # Reset the settings
+        if [ ! -z "${PROXY_POETRY}" ]; then
+            # Remove the source
+            # https://python-poetry.org/docs/cli/#source-remove
+            poetry source remove langsam
+        fi
+    fi
     )
 
-    # Copy results
-    cd $INSTALL_DIR_src
-    cp -a machine-learning/ann machine-learning/immich_ml $INSTALL_DIR_ml/
+    # Copy the module, including its packaged logging/Gunicorn configuration.
+    cd "$INSTALL_DIR_src"
+    cp -a machine-learning/ann machine-learning/immich_ml "$INSTALL_DIR_ml/"
 }
 
 install_immich_machine_learning
@@ -625,6 +656,12 @@ download_geonames () {
         echo "geodata exists, skip downloading"
     fi
 
+    # Immich 3.3 resolves country names from GeoNames, including cached installs.
+    if [ ! -s countryInfo.txt ]; then
+        wget -O countryInfo.txt.tmp https://download.geonames.org/export/dump/countryInfo.txt || return
+        mv countryInfo.txt.tmp countryInfo.txt
+    fi
+
     cd $INSTALL_DIR
     # Link the folder
     ln -s $INSTALL_DIR_geo $INSTALL_DIR_app/
@@ -663,18 +700,11 @@ set +a
 cd $INSTALL_DIR_ml
 . venv/bin/activate
 
-: "\${MACHINE_LEARNING_HOST:=127.0.0.1}"
-: "\${MACHINE_LEARNING_PORT:=3003}"
-: "\${MACHINE_LEARNING_WORKERS:=1}"
-: "\${MACHINE_LEARNING_WORKER_TIMEOUT:=120}"
-
-exec gunicorn immich_ml.main:app \
-        -k immich_ml.config.CustomUvicornWorker \
-        -w "\$MACHINE_LEARNING_WORKERS" \
-        -b "\$MACHINE_LEARNING_HOST":"\$MACHINE_LEARNING_PORT" \
-        -t "\$MACHINE_LEARNING_WORKER_TIMEOUT" \
-        --log-config-json log_conf.json \
-        --graceful-timeout 0
+# Preserve the native install's bind settings; upstream's module owns the
+# Gunicorn options and the paths to its packaged configuration files.
+export IMMICH_HOST="\${MACHINE_LEARNING_HOST:-\${IMMICH_HOST:-127.0.0.1}}"
+export IMMICH_PORT="\${MACHINE_LEARNING_PORT:-\${IMMICH_PORT:-3003}}"
+exec python -m immich_ml
 EOF
 
     chmod 775 $INSTALL_DIR_ml/start.sh

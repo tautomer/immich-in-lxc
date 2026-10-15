@@ -153,7 +153,7 @@ jobs:
 
   build-dependencies:
     needs: orchestrator
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: needs.orchestrator.outputs.should_build_deps == 'true'
     steps:
       - name: Set environment variables
@@ -164,22 +164,29 @@ jobs:
       - name: Find base-image commit
         id: find_commit
         run: |
-          IMMICH_VERSION=${{ env.VERSION }}
-          # Get the Dockerfile content from GitHub API and parse the base image tag
-          BASE_IMAGE_TAG=$(curl -sL \
+          set -euo pipefail
+          IMMICH_VERSION=$VERSION
+          BASE_IMAGE_TAG=$(curl -fsSL --retry 3 \
+            -H "Authorization: Bearer ${{ github.token }}" \
             -H "Accept: application/vnd.github.v3.raw" \
             "https://api.github.com/repos/immich-app/immich/contents/server/Dockerfile?ref=${IMMICH_VERSION}" | \
             grep 'FROM ghcr.io/immich-app/base-server-dev:' | \
             awk -F'[:@]' '{print $2}')
-
+          if [[ ! "$BASE_IMAGE_TAG" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+            echo "::error::Invalid base image tag for $IMMICH_VERSION: $BASE_IMAGE_TAG"
+            exit 1
+          fi
           echo "Found base image tag: $BASE_IMAGE_TAG"
 
-          # Use the GitHub Releases API to find the commit SHA for that tag
-          COMMIT_SHA=$(curl -sL \
+          COMMIT_SHA=$(curl -fsSL --retry 3 \
+            -H "Authorization: Bearer ${{ github.token }}" \
             -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/repos/immich-app/base-images/git/refs/tags/$BASE_IMAGE_TAG" | \
-            jq -r '.object.sha')
-
+            jq -er '.object.sha')
+          if [[ ! "$COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Invalid base image commit for $BASE_IMAGE_TAG: $COMMIT_SHA"
+            exit 1
+          fi
           echo "Found commit SHA: $COMMIT_SHA"
           echo "base_commit=${COMMIT_SHA}" >> "$GITHUB_ENV"
 
@@ -374,7 +381,7 @@ jobs:
 
   build-server:
     needs: [orchestrator, build-dependencies]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: |
       always() && 
       needs.orchestrator.outputs.should_build_server == 'true' && 
@@ -429,11 +436,16 @@ jobs:
           sudo touch /usr/bin/ffprobe
           sudo chmod +x /usr/bin/ffprobe
 
-      - name: Install Python 3.11
+      - name: Install version-specific Python support
         run: |
-          sudo add-apt-repository -y ppa:deadsnakes/ppa
+          PYTHON_VERSION=$(bash python-version.sh "$VERSION")
+          echo "ML_PYTHON_VERSION=$PYTHON_VERSION" >> "$GITHUB_ENV"
+          # Ubuntu 24.04 provides 3.12. Only pre-3.3 builds need the 3.11 PPA.
+          if [ "$PYTHON_VERSION" = 3.11 ]; then
+            sudo add-apt-repository -y ppa:deadsnakes/ppa
+          fi
           sudo apt update
-          sudo apt install -y python3.11 python3.11-venv python3.11-dev
+          sudo apt install -y "python$PYTHON_VERSION" "python$PYTHON_VERSION-venv" "python$PYTHON_VERSION-dev"
 
       - name: Read upstream JavaScript toolchain
         id: toolchain
@@ -469,6 +481,7 @@ jobs:
         run: |
           packages=(
             build-essential
+            patchelf
             libdav1d-dev
             cmake
             libbrotli-dev
@@ -507,9 +520,7 @@ jobs:
 
       - name: Modify the installation script
         run: |
-          # Immich v3.2 requires NumPy 2.1+ through onnx/ml-dtypes; do not
-          # reintroduce the legacy NumPy <2 pin here.
-          sed -i "/poetry install --no-root --extras openvino/i\ \ \ \ \ \ \ \ poetry add 'rapidocr<3.4.2'\n\ \ \ \ \ \ \ \ poetry update --lock" install.sh
+          # Immich 3.3+ ML dependencies come from upstream uv.lock without local pins.
           sed -i "s/^generate_build_lock[[:space:]]*\$/cp \$SCRIPT_DIR\/build-lock.json \$INSTALL_DIR_app/" install.sh
 
       - name: Pre-build setup
@@ -533,17 +544,12 @@ jobs:
       - name: Build immich server
         id: build
         run: |
-            sudo ln -sf /usr/bin/python3.11 /usr/bin/python3
-            sudo -iu immich env "PATH=$PATH" bash -c '
+            sudo -iu immich env "PATH=$PATH" "ML_PYTHON=/usr/bin/python$ML_PYTHON_VERSION" bash -c '
               set -euo pipefail;
               export XDG_CONFIG_HOME=$HOME/.config;
-              export POETRY_CONFIG_DIR=$HOME/.config/pypoetry;
               export NVM_DIR=$HOME/.nvm;
               cd /home/immich/immich-in-lxc;
               ./install.sh;
-              ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python;
-              ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3;
-              ln -sf /usr/bin/python3.11 /home/immich/app/machine-learning/venv/bin/python3.11;
               test -s /home/immich/app/dist/main.js;
               grep -Fq "exec node /home/immich/app/dist/main" /home/immich/app/start.sh
             '
@@ -561,6 +567,24 @@ jobs:
             fi;
             node -e "const sharp=require(\"sharp\"); if (!sharp.versions || !sharp.versions.vips) throw new Error(\"Sharp did not report libvips\"); console.log({ entry: require.resolve(\"sharp\"), versions: sharp.versions })"
           '
+
+      - name: Verify machine-learning runtime artifact
+        run: |
+          sudo -iu immich bash -c '
+            set -euo pipefail;
+            cd /home/immich/app/machine-learning;
+            . venv/bin/activate;
+            python -c "import immich_ml.main, onnxruntime; print(onnxruntime.get_available_providers())";
+            if [ -f immich_ml/gunicorn_conf.py ]; then
+              python -m gunicorn --check-config -c immich_ml/gunicorn_conf.py immich_ml.main:app;
+            fi
+          '
+
+      - name: Verify geodata artifact
+        run: |
+          for file in cities500.txt admin1CodesASCII.txt admin2Codes.txt ne_10m_admin_0_countries.geojson countryInfo.txt geodata-date.txt; do
+            test -s "$INSTALL_DIR/geodata/$file"
+          done
 
       - name: Archive app folder
         run: |
@@ -632,42 +656,10 @@ jobs:
             - Built for: Ubuntu 24.04 LTS with openvino for ML
             - New release: **${{ needs.orchestrator.outputs.is_new_release }}**
 
-            **How to install**:  
-            - Follow the setup steps in the README up to (but not including) `pre-install.sh`.
-            - Install Python 3.11 as `onnxruntime-openvino=1.18.0` was not built for Python 3.12.
-              ```shell
-              add-apt-repository ppa:deadsnakes/ppa
-              apt update
-              apt install python3.11 python3.11-venv python3.11-dev
-              ```
-            - Stop the `immich-ml` and `immich-web` services: `systemctl stop immich-ml immich-web`.
-            - Download `dependencies.tar.gz` into the home folder of your LXC's root user.
-            - To update the dependency libraries:
-              - If you have installed dependencies with `pre-install.sh`, you must first uninstall them.
-              - Extract `tar -xf dependencies.tar.gz --no-same-owner`.
-              - Create the shared /opt/deps directory and move extracted files:
-                ```shell
-                mkdir -p /opt/stow
-                mv $HOME/deps /opt/stow
-                ```
-              - Install with Stow:
-                ```shell
-                apt install stow
-                cd /opt/stow
-                for lib in $(ls -d */); do
-                  stow -v -t /usr/local $lib
-                done
-                ```
-              - Copy build lock file: `cp ${HOME}/deps/json/build-lock.json /opt/stow/`
-              - Clean up: `rm -rf ~/deps ~/dependencies.tar.gz`
-            - Switch to the immich user: `su - immich`.
-            - Download `server.tar.gz` into the home folder.
-            - Backup existing installation: `mv /home/immich/app /home/immich/app.old && mv /home/immich/geodata /home/immich/geodata.old`.
-            - Extract the server tarball: `tar -xf server.tar.gz`.
-            - Ensure upload directory is linked: `ln -sf /your/upload/path /home/immich/app/upload`.
-            - Update systemd services if needed: `./post-install.sh`.
-            - Restart services: `systemctl start immich-ml immich-web`.
-            - Verify: `systemctl status immich-ml immich-web`.
+            **Installation**:
+            - Ubuntu 24.04 x86-64, `/home/immich`, OpenVINO ML.
+            - Python **3.11 for Immich <3.3**; **3.12 for 3.3+** (requires >=3.12).
+            - Back up your data and stop both services. Follow the [prebuilt installation guide](https://github.com/${{ github.repository }}/blob/${{ github.sha }}/README.md#install-or-update-prebuilt-artifacts) using both archives from this release.
 
             **Release details**:  
             This release was created automatically by GitHub Actions. Build run: [GitHub Actions Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).

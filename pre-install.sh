@@ -79,7 +79,7 @@ install_build_dependency () {
     # From immich/base-image
     ## Install common tools
     apt-get install --no-install-recommends -y\
-        curl git python3-venv python3-dev unzip
+        curl git python3-venv python3-dev patchelf unzip
 
     ## Install common build components
     apt-get install --no-install-recommends -y\

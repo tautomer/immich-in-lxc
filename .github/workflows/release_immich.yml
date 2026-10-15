@@ -104,51 +104,10 @@ jobs:
             - Built on: **${{ env.TIMESTAMP }}**
             - Built for: Ubuntu 24.04 LTS with openvino for ML
 
-            **How to install**:  
-            - Follow the setup steps in the README up to (but not including) `pre-install.sh`.
-            - Install Python 3.11 as `onnxruntime-openvino=1.18.0` was not built for Python 3.12.
-              ```shell
-              add-apt-repository ppa:deadsnakes/ppa
-              apt update
-              # venv and header files are needed as well
-              apt install python3.11 python3.11-venv python3.11-dev
-              ```
-            - Stop the `immich-ml` and `immich-web` services: `systemctl stop immich-ml immich-web`.
-            - Download `dependencies.tar.gz` into the home folder of your LXC's root user.
-            - To update the dependency libraries
-              - If you have installed dependencies with `pre-install.sh`, you must first uninstall them. Navigate to each library's source folder (e.g., `/root/immich-in-lxc/image-source/libheif`) and run the uninstall command.
-              - Extract `tar -xf dependencies.tar.gz --no-same-owner`.
-              - Create the shared /opt/deps directory if it doesn't already exist and move your extracted files into it. This location ensures the libraries are accessible to all users.
-                ```shell
-                mkdir -p /opt/stow
-                mv $HOME/deps /opt/stow
-                ```
-              - Install with Stow
-                ```shell
-                apt install stow
-                cd /opt/stow
-                for lib in $(ls -d */); do
-                  stow -v -t /usr/local $lib
-                done
-                ```
-              - Copy build lock file
-                ```shell
-                cp ${HOME}/deps/json/build-lock.json /opt/stow/
-                ```
-              - Remove the tarball and extracted folder with
-                ```shell
-                rm -rf ~/deps ~/dependencies.tar.gz
-                ```
-            - Switch to the immich user: `su - immich`.
-            - Download `server.tar.gz` into the home folder.
-            - Remove `/home/immich/app` and `/home/immich/geodata` folders. For safety, you can rename them first: `mv /home/immich/app /home/immich/app.old` and `mv /home/immich/geodata /home/immich/geodata.old`.
-            - Extract the server tarball: `tar -xf server.tar.gz`.
-            - Ensure that the `app/upload` directory is linked correctly: `ln -sf /your/upload/path /home/immich/app/upload`.
-            - If necessary, manually update runtime.env or run `./post-install.sh` to install/update systemd services. Since these files generally do not change with respect to immich updates, they are not included in the tarball.
-            - Restart `immich-ml` and `immich-web` services.
-            - Verify that all services are running correctly: `systemctl status immich-ml immich-web`.
-            - If everything is working, you can remove the old app and geodata folders: `rm -rf /home/immich/app.old /home/immich/geodata.old`.
-            - If you encounter issues, you can restore the old folders: `mv /home/immich/app.old /home/immich/app` and `mv /home/immich/geodata.old /home/immich/geodata`. 
+            **Installation**:
+            - Ubuntu 24.04 x86-64, `/home/immich`, OpenVINO ML.
+            - Python **3.11 for Immich <3.3**; **3.12 for 3.3+** (requires >=3.12).
+            - Back up your data and stop both services. Follow the [prebuilt installation guide](https://github.com/${{ github.repository }}/blob/${{ github.sha }}/README.md#install-or-update-prebuilt-artifacts) using both archives from this release.
 
             **Release details**:  
             This release was created automatically by GitHub Actions. You can track the build process here: [GitHub Actions Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
