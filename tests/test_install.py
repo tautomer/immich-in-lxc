@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import tarfile
 import tempfile
 import textwrap
 import unittest
@@ -258,6 +259,45 @@ class PythonVersionTests(unittest.TestCase):
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_archive_runs_as_build_user(self):
+        for filename in ("auto_build_immich.yml", "build_server.yml"):
+            with self.subTest(workflow=filename), tempfile.TemporaryDirectory(prefix="immich-archive-") as directory:
+                base = Path(directory)
+                install = base / "install dir"
+                files = (
+                    "app/node_modules/.pnpm-workspace-state-v1.json",
+                    "app/cli/node_modules/.pnpm-workspace-state-v1.json",
+                    "app/cli/pnpm-lock.yaml", "app/cli/pnpm-workspace.yaml",
+                    "app/pnpm-lock.yaml", "app/pnpm-workspace.yaml",
+                    "geodata/countryInfo.txt",
+                )
+                for name in files:
+                    path = install / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(name)
+                    path.chmod(0o600)
+                (install / "app/cli-link").symlink_to("cli")
+                # Validate the user switch, then exercise real tar without sudo.
+                stub = base / "sudo"
+                stub.write_text('#!/bin/bash\nset -eu\n[ "$1" = -u ]\n[ "$2" = immich ]\nprintf "%s\\n" "$@" > "$SUDO_LOG"\nshift 2\nexec "$@"\n')
+                stub.chmod(0o755)
+                workflow = (ROOT / ".github/workflows" / filename).read_text()
+                step = workflow.split("      - name: Archive app folder\n", 1)[1].split("      - name:", 1)[0]
+                code = textwrap.dedent(step.split("        run: |\n", 1)[1])
+                result = subprocess.run(["bash", "-e", "-c", code], cwd=base,
+                    env={**os.environ, "PATH": f"{base}:{os.environ['PATH']}", "INSTALL_DIR": str(install), "SUDO_LOG": str(base / "sudo.log")},
+                    capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual((base / "sudo.log").read_text().splitlines(),
+                    ["-u", "immich", "tar", "-czf", "-", "-C", str(install), "app", "geodata"])
+                archive = base / "server.tar.gz"
+                self.assertEqual(archive.stat().st_uid, os.getuid())
+                with tarfile.open(archive, "r:gz") as packed:
+                    for name in files:
+                        self.assertEqual(packed.extractfile(name).read().decode(), name)
+                        self.assertEqual(packed.getmember(name).mode, 0o600)
+                    self.assertTrue(packed.getmember("app/cli-link").issym())
+
     def test_base_image_lookup_validates_api_metadata(self):
         sha = "a" * 40
         dockerfile = "FROM ghcr.io/immich-app/base-server-dev:202610131110@sha256:digest AS builder"

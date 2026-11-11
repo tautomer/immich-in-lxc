@@ -588,7 +588,8 @@ jobs:
 
       - name: Archive app folder
         run: |
-          tar -czf server.tar.gz -C $INSTALL_DIR app geodata
+          # pnpm may create owner-only files; archive as the build user.
+          sudo -u immich tar -czf - -C "$INSTALL_DIR" app geodata > server.tar.gz
 
       - name: Upload server artifact
         uses: actions/upload-artifact@v4
